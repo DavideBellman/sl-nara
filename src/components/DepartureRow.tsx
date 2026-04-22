@@ -1,91 +1,100 @@
-import { useState } from 'react'
-import type { DepartureGroup } from '../types'
-import { getTransportColor, getTransportEmoji } from '../lib/format'
+import { AlertTriangle } from 'lucide-react'
+import type { Departure } from '../types'
+import { getTransportColor } from '../lib/format'
 
 interface DepartureRowProps {
-  group: DepartureGroup
+  departure: Departure
 }
 
-export function DepartureRow({ group }: DepartureRowProps) {
-  const [deviationExpanded, setDeviationExpanded] = useState(false)
-  const color = getTransportColor(group.transportMode, group.groupOfLines)
-  const emoji = getTransportEmoji(group.transportMode)
-
-  const visibleDepartures = group.departures.slice(0, 4)
-  const hasDeviations = group.departures.some(d => d.deviations.length > 0)
-  const allDeviations = group.departures
-    .flatMap(d => d.deviations)
-    .filter((d, i, arr) => arr.findIndex(x => x.message === d.message) === i)
+export function DepartureRow({ departure }: DepartureRowProps) {
+  const color = getTransportColor(departure.line.transport_mode, departure.line.group_of_lines)
+  const cancelled = departure.state === 'CANCELLED'
+  const atStop = departure.state === 'ATSTOP'
+  const hasDeviation = departure.deviations.length > 0
 
   return (
-    <div className="bg-white dark:bg-gray-900 rounded-2xl px-4 py-3 shadow-sm border border-gray-100 dark:border-gray-800">
-      <div className="flex items-center gap-3 mb-2.5">
-        {/* Line badge */}
-        <div
-          className="flex-shrink-0 min-w-[48px] h-8 rounded-lg flex items-center justify-center px-2"
-          style={{ backgroundColor: color }}
-          title={group.transportMode}
-        >
-          <span className="text-white font-bold text-sm leading-none">
-            {group.lineDesignation}
-          </span>
-        </div>
+    <div style={{
+      display: 'flex',
+      alignItems: 'center',
+      gap: '12px',
+      padding: '11px 16px',
+      borderBottom: '1px solid var(--border)',
+      minHeight: '48px',
+    }}>
+      {/* Line badge */}
+      <div style={{
+        backgroundColor: color,
+        borderRadius: '4px',
+        minWidth: '42px',
+        height: '22px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '0 6px',
+        flexShrink: 0,
+      }}>
+        <span style={{
+          fontFamily: 'var(--font-mono)',
+          color: 'white',
+          fontSize: '11px',
+          fontWeight: '700',
+          letterSpacing: '0.02em',
+          lineHeight: 1,
+        }}>
+          {departure.line.designation}
+        </span>
+      </div>
 
-        {/* Destination + direction */}
-        <div className="flex-1 min-w-0">
-          <p className="font-semibold text-gray-900 dark:text-gray-100 text-sm truncate leading-tight">
-            {group.destination || group.direction}
+      {/* Destination + platform */}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <p style={{
+          fontSize: '14px',
+          fontWeight: '500',
+          color: cancelled ? 'var(--text-muted)' : 'var(--text)',
+          textDecoration: cancelled ? 'line-through' : 'none',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+          lineHeight: '1.3',
+          margin: 0,
+        }}>
+          {departure.destination}
+        </p>
+        {departure.stop_point.designation && (
+          <p style={{
+            fontSize: '11px',
+            fontFamily: 'var(--font-mono)',
+            color: 'var(--text-faint)',
+            lineHeight: '1.3',
+            margin: 0,
+          }}>
+            läge {departure.stop_point.designation}
           </p>
-          <p className="text-xs text-gray-400 dark:text-gray-500 truncate">
-            {emoji} {group.stopDesignation ? `Läge ${group.stopDesignation}` : ''}
-          </p>
-        </div>
-
-        {/* Deviation icon */}
-        {hasDeviations && (
-          <button
-            onClick={() => setDeviationExpanded(e => !e)}
-            className="flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-full bg-amber-50 dark:bg-amber-900/20 text-amber-500"
-            aria-label="Visa störningar"
-          >
-            ⚠️
-          </button>
         )}
       </div>
 
-      {/* Departure times */}
-      <div className="flex flex-wrap gap-2">
-        {visibleDepartures.map((dep, i) => {
-          const cancelled = dep.state === 'CANCELLED'
-          const atStop = dep.state === 'ATSTOP'
-          return (
-            <span
-              key={i}
-              className={[
-                'rounded-xl px-3 py-1.5 text-sm font-semibold',
-                cancelled
-                  ? 'line-through text-red-400 dark:text-red-500 bg-red-50 dark:bg-red-900/20'
-                  : atStop
-                  ? 'text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-900/20'
-                  : 'text-gray-800 dark:text-gray-200 bg-gray-100 dark:bg-gray-800',
-              ].join(' ')}
-            >
-              {cancelled ? 'Inställd' : dep.display}
-            </span>
-          )
-        })}
-      </div>
-
-      {/* Deviation messages */}
-      {deviationExpanded && allDeviations.length > 0 && (
-        <div className="mt-3 pt-3 border-t border-amber-100 dark:border-amber-900/30 space-y-1">
-          {allDeviations.map((dev, i) => (
-            <p key={i} className="text-xs text-amber-700 dark:text-amber-400">
-              {dev.message}
-            </p>
-          ))}
+      {/* Deviation indicator */}
+      {hasDeviation && !cancelled && (
+        <div style={{ color: '#f59e0b', flexShrink: 0, display: 'flex' }}>
+          <AlertTriangle size={13} />
         </div>
       )}
+
+      {/* Time */}
+      <div style={{ flexShrink: 0, textAlign: 'right' }}>
+        <span style={{
+          fontFamily: 'var(--font-mono)',
+          fontSize: '17px',
+          fontWeight: '500',
+          letterSpacing: '-0.02em',
+          color: cancelled ? '#ef4444'
+            : atStop ? '#22c55e'
+            : 'var(--text)',
+          textDecoration: cancelled ? 'line-through' : 'none',
+        }}>
+          {cancelled ? 'Inst' : departure.display}
+        </span>
+      </div>
     </div>
   )
 }

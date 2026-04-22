@@ -1,3 +1,4 @@
+import { MapPin, Search } from 'lucide-react'
 import type { FavoriteSite } from '../types'
 import { Favorites } from './Favorites'
 
@@ -31,21 +32,85 @@ export function PermissionGate({ reason, favorites, onFavoriteSelect, onSearchOp
   const { title, body } = messages[reason]
 
   return (
-    <div className="flex flex-col items-center justify-center flex-1 px-6 py-12 text-center">
-      <div className="text-5xl mb-4">📍</div>
-      <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-2">{title}</h1>
-      <p className="text-gray-500 dark:text-gray-400 mb-8 max-w-xs">{body}</p>
+    <div style={{
+      flex: 1,
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: '48px 24px',
+      textAlign: 'center',
+    }}>
+      <div style={{
+        width: '48px',
+        height: '48px',
+        borderRadius: '6px',
+        border: '1px solid var(--border)',
+        background: 'var(--surface)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginBottom: '20px',
+        color: 'var(--text-muted)',
+      }}>
+        <MapPin size={20} />
+      </div>
+
+      <h1 style={{
+        fontSize: '16px',
+        fontWeight: '600',
+        color: 'var(--text)',
+        margin: '0 0 8px',
+      }}>
+        {title}
+      </h1>
+      <p style={{
+        fontSize: '14px',
+        color: 'var(--text-muted)',
+        maxWidth: '280px',
+        lineHeight: '1.5',
+        margin: '0 0 28px',
+      }}>
+        {body}
+      </p>
 
       <button
         onClick={onSearchOpen}
-        className="w-full max-w-xs flex items-center justify-center gap-2 bg-gray-900 dark:bg-white text-white dark:text-gray-900 font-semibold py-4 px-6 rounded-2xl text-base hover:opacity-90 transition-opacity min-h-[52px]"
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: '8px',
+          padding: '10px 20px',
+          background: 'var(--text)',
+          color: 'var(--bg)',
+          borderRadius: '6px',
+          fontSize: '14px',
+          fontWeight: '500',
+          border: 'none',
+          cursor: 'pointer',
+          width: '100%',
+          maxWidth: '280px',
+          fontFamily: 'var(--font-sans)',
+        }}
       >
-        <span>🔍</span>
-        <span>Sök hållplats</span>
+        <Search size={15} />
+        Sök hållplats
       </button>
 
       {favorites.length > 0 && (
-        <div className="mt-8 w-full max-w-xs">
+        <div style={{ marginTop: '32px', width: '100%', maxWidth: '280px' }}>
+          <p style={{
+            fontSize: '10px',
+            fontFamily: 'var(--font-mono)',
+            color: 'var(--text-faint)',
+            textTransform: 'uppercase',
+            letterSpacing: '0.08em',
+            marginBottom: '8px',
+            textAlign: 'left',
+          }}>
+            Favoriter
+          </p>
           <Favorites favorites={favorites} onSelect={onFavoriteSelect} />
         </div>
       )}

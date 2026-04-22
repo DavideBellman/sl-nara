@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from 'react'
+import { MapPin, Star, Search } from 'lucide-react'
 import type { Site, FavoriteSite } from './types'
 import { fetchSites } from './lib/api'
-import { isTooFarFromStockholm } from './lib/geo'
+import { isTooFarFromStockholm, haversineKm } from './lib/geo'
 import { getItem, setItem } from './lib/storage'
 import { useGeolocation } from './hooks/useGeolocation'
 import { useNearestStop } from './hooks/useNearestStop'
@@ -13,7 +14,6 @@ import { Footer } from './components/Footer'
 
 const FAVORITES_KEY = 'sl_favorites_v1'
 const MAX_FAVORITES = 5
-// How many nearest stops to try before giving up on auto-selection
 const MAX_GPS_ATTEMPTS = 5
 
 interface SelectedStop {
@@ -29,8 +29,6 @@ export default function App() {
   const [selectedStop, setSelectedStop] = useState<SelectedStop | null>(null)
   const [isSearchOpen, setIsSearchOpen] = useState(false)
   const [favorites, setFavorites] = useState<FavoriteSite[]>(() => getItem<FavoriteSite[]>(FAVORITES_KEY) ?? [])
-
-  // Which index into nearestTen we're currently trying via GPS auto-selection
   const [gpsStopIndex, setGpsStopIndex] = useState(0)
 
   const geo = useGeolocation()
@@ -43,7 +41,6 @@ export default function App() {
       .catch(err => { setSitesError(err instanceof Error ? err.message : 'Okänt fel'); setSitesLoading(false) })
   }, [])
 
-  // Select the current GPS candidate stop
   useEffect(() => {
     if (geo.status !== 'granted' || !geo.coords || nearestTen.length === 0 || sitesLoading) return
     if (isTooFarFromStockholm(geo.coords, sites)) return
@@ -51,8 +48,6 @@ export default function App() {
     if (stop) setSelectedStop({ id: stop.id, name: stop.name, viaGps: true })
   }, [geo.status, geo.coords, nearestTen, gpsStopIndex, sitesLoading, sites])
 
-  // Auto-advance to next nearest stop if this one returned 0 departures.
-  // Many sites in SL's database (schools, landmarks) exist but have no scheduled service.
   useEffect(() => {
     if (!selectedStop?.viaGps) return
     if (loading || !lastUpdated) return
@@ -80,6 +75,15 @@ export default function App() {
 
   const isFavorite = selectedStop ? favorites.some(f => f.id === selectedStop.id) : false
 
+  // Distance from user to selected stop
+  const selectedSite = sites.find(s => s.id === selectedStop?.id)
+  const distKm = geo.coords && selectedSite
+    ? haversineKm(geo.coords, { lat: selectedSite.lat, lon: selectedSite.lon })
+    : null
+  const distLabel = distKm == null ? null
+    : distKm < 1 ? `${Math.round(distKm * 1000)} m`
+    : `${distKm.toFixed(1)} km`
+
   const geoFailed = geo.status === 'denied' || geo.status === 'timeout' || geo.status === 'error'
   const tooFar = geo.status === 'granted' && geo.coords != null && sites.length > 0 && isTooFarFromStockholm(geo.coords, sites)
   const showPermissionGate = !selectedStop && (geoFailed || tooFar)
@@ -93,7 +97,7 @@ export default function App() {
     (!selectedStop && !geoFailed && !tooFar)
 
   return (
-    <div className="flex flex-col min-h-svh bg-gray-50 dark:bg-gray-950">
+    <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100svh', background: 'var(--bg)' }}>
       {isSearchOpen && (
         <StopSearch
           sites={sites}
@@ -106,58 +110,149 @@ export default function App() {
         />
       )}
 
-      <header className="flex items-center justify-between px-4 py-3 bg-gray-900 dark:bg-black text-white safe-top">
-        <div className="flex items-center gap-2 min-w-0">
-          <span className="text-xl flex-shrink-0">🚍</span>
-          <div className="min-w-0">
+      {/* Header */}
+      <header
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '12px 16px',
+          background: '#0a0a0a',
+          borderBottom: '1px solid #1a1a1a',
+          color: '#fafafa',
+          flexShrink: 0,
+        }}
+        className="safe-top"
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0 }}>
+          {/* SL badge */}
+          <span style={{
+            background: '#007db8',
+            color: 'white',
+            fontFamily: 'var(--font-mono)',
+            fontSize: '11px',
+            fontWeight: '700',
+            letterSpacing: '0.06em',
+            padding: '3px 7px',
+            borderRadius: '4px',
+            flexShrink: 0,
+          }}>
+            SL
+          </span>
+
+          <div style={{ minWidth: 0 }}>
             {selectedStop ? (
               <>
-                <div className="flex items-center gap-1.5">
-                  <h1 className="font-bold text-base truncate leading-tight">{selectedStop.name}</h1>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <h1 style={{
+                    fontSize: '15px',
+                    fontWeight: '600',
+                    lineHeight: '1.3',
+                    margin: 0,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}>
+                    {selectedStop.name}
+                  </h1>
                   {selectedStop.viaGps && (
-                    <span className="text-xs text-blue-400 flex-shrink-0" title="Vald via GPS">📍</span>
+                    <MapPin size={12} style={{ color: '#3b82f6', flexShrink: 0 }} />
                   )}
                 </div>
-                <p className="text-xs text-gray-400 leading-tight">Avgångar i realtid</p>
+                <p style={{
+                  fontSize: '11px',
+                  color: '#737373',
+                  fontFamily: 'var(--font-mono)',
+                  lineHeight: '1.3',
+                  margin: 0,
+                }}>
+                  {distLabel ? `${distLabel} · ` : ''}Avgångar i realtid
+                </p>
               </>
             ) : (
-              <h1 className="font-bold text-base">SL Nära</h1>
+              <h1 style={{ fontSize: '15px', fontWeight: '600', margin: 0 }}>SL Nära</h1>
             )}
           </div>
         </div>
 
-        <div className="flex items-center gap-1 flex-shrink-0">
+        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
           {selectedStop && (
             <button
               onClick={toggleFavorite}
-              className={`w-10 h-10 flex items-center justify-center rounded-full transition-colors text-xl ${isFavorite ? 'text-yellow-400' : 'text-gray-400 hover:text-yellow-400'}`}
-              title={isFavorite ? 'Ta bort favorit' : 'Lägg till favorit'}
+              style={{
+                width: '40px',
+                height: '40px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                borderRadius: '6px',
+                border: 'none',
+                background: 'none',
+                cursor: 'pointer',
+                color: isFavorite ? '#eab308' : '#525252',
+                transition: 'color 0.15s',
+              }}
               aria-label={isFavorite ? 'Ta bort favorit' : 'Lägg till favorit'}
             >
-              {isFavorite ? '⭐' : '☆'}
+              <Star size={17} fill={isFavorite ? 'currentColor' : 'none'} />
             </button>
           )}
           <button
             onClick={() => setIsSearchOpen(true)}
-            className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-gray-800 transition-colors text-xl"
+            style={{
+              width: '40px',
+              height: '40px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              borderRadius: '6px',
+              border: 'none',
+              background: 'none',
+              cursor: 'pointer',
+              color: '#737373',
+            }}
             aria-label="Sök hållplats"
           >
-            🔍
+            <Search size={17} />
           </button>
         </div>
       </header>
 
-      <main className="flex flex-col flex-1">
+      <main style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
         {sitesError && !sitesLoading && (
-          <div className="mx-4 mt-4 p-3 rounded-xl bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 text-sm text-center">
+          <div style={{
+            margin: '12px 16px',
+            padding: '10px 14px',
+            border: '1px solid #ef4444',
+            borderRadius: '6px',
+            color: '#ef4444',
+            fontSize: '13px',
+            textAlign: 'center',
+            fontFamily: 'var(--font-mono)',
+          }}>
             Kunde inte ladda hållplatsdata: {sitesError}
           </div>
         )}
 
         {isInitialLoading && !showPermissionGate && (
-          <div className="flex flex-col items-center justify-center flex-1 gap-3 text-gray-400 dark:text-gray-600">
-            <div className="w-10 h-10 border-2 border-gray-200 dark:border-gray-800 border-t-gray-400 rounded-full animate-spin" />
-            <p className="text-sm">
+          <div style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flex: 1,
+            gap: '12px',
+            color: 'var(--text-faint)',
+          }}>
+            <div style={{
+              width: '20px',
+              height: '20px',
+              border: '2px solid var(--border)',
+              borderTopColor: 'var(--text-muted)',
+              borderRadius: '50%',
+              animation: 'spin 0.8s linear infinite',
+            }} className="animate-spin" />
+            <p style={{ fontSize: '12px', fontFamily: 'var(--font-mono)', margin: 0 }}>
               {sitesLoading ? 'Laddar hållplatser…' : 'Hämtar din position…'}
             </p>
           </div>
@@ -184,7 +279,7 @@ export default function App() {
         )}
       </main>
 
-      <Footer />
+      {!selectedStop && <Footer />}
     </div>
   )
 }
