@@ -1,0 +1,32 @@
+@import "tailwindcss";
+
+@theme {
+  --color-bus: #d71d24;
+  --color-metro-green: #148541;
+  --color-metro-red: #d71d24;
+  --color-metro-blue: #007db8;
+  --color-train: #a25ea6;
+  --color-tram: #f36e21;
+  --color-ship: #00a0e3;
+}
+
+* {
+  -webkit-tap-highlight-color: transparent;
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  overscroll-behavior: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+#root {
+  min-height: 100svh;
+  display: flex;
+  flex-direction: column;
+}
+
+.safe-top { padding-top: max(env(safe-area-inset-top), 0px); }
+.safe-bottom { padding-bottom: max(env(safe-area-inset-bottom), 0px); }
