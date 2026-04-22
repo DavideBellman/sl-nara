@@ -67,3 +67,12 @@ export function ArrowRightIcon({ size = 12, ...props }: IconProps) {
     </svg>
   )
 }
+
+export function ClockIcon({ size = 14, ...props }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <circle cx="12" cy="12" r="10" />
+      <polyline points="12 6 12 12 16 14" />
+    </svg>
+  )
+}

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import type { Departure } from '../types'
 import { getTransportColor } from '../lib/format'
-import { StarIcon, StarFilledIcon, MapPinIcon, SearchIcon, RefreshIcon, WarningIcon } from './icons'
+import { StarIcon, StarFilledIcon, MapPinIcon, RefreshIcon, WarningIcon } from './icons'
 
 const DARK_COLORS: Record<string, string> = {
   '#d71d24': '#e24b4a',
@@ -32,7 +32,6 @@ interface DeparturesViewProps {
   error: string | null
   lastUpdated: Date | null
   isOffline: boolean
-  onSearch: () => void
   onRefresh: () => void
   onToggleFavorite: () => void
 }
@@ -46,7 +45,6 @@ export function DeparturesView({
   error,
   lastUpdated,
   isOffline,
-  onSearch,
   onRefresh,
   onToggleFavorite,
 }: DeparturesViewProps) {
@@ -57,7 +55,7 @@ export function DeparturesView({
     : null
 
   return (
-    <div className="flex flex-col min-h-svh bg-white dark:bg-neutral-950 text-neutral-950 dark:text-neutral-50">
+    <div className="h-full flex flex-col bg-white dark:bg-neutral-950 text-neutral-950 dark:text-neutral-50">
       {/* Offline banner */}
       {isOffline && (
         <div className="px-5 py-2 bg-amber-50 dark:bg-amber-950 border-b border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-400 text-label text-center">
@@ -97,47 +95,41 @@ export function DeparturesView({
         </div>
       )}
 
-      {/* First-load spinner */}
-      {loading && departures.length === 0 && (
-        <div className="flex flex-col items-center justify-center flex-1 gap-3 text-neutral-400 dark:text-neutral-600 py-16">
-          <div className="w-5 h-5 border-2 border-neutral-200 dark:border-neutral-800 border-t-neutral-400 rounded-full animate-spin" />
-          <p className="text-label">Hämtar avgångar</p>
-        </div>
-      )}
-
-      {/* Departure list */}
-      {!loading || departures.length > 0 ? (
-        <div className="flex-1">
-          {departures.map((dep, idx) => (
-            <DepartureRow
-              key={`${dep.line.designation}-${dep.destination}-${dep.scheduled}-${idx}`}
-              departure={dep}
-              emphasized={idx === 0 && dep.state !== 'CANCELLED'}
-              isDark={isDark}
-            />
-          ))}
-          {departures.length === 0 && !loading && (
-            <EmptyState lastUpdated={lastUpdatedStr} />
-          )}
-        </div>
-      ) : null}
+      {/* Scrollable list */}
+      <div className="flex-1 overflow-y-auto">
+        {loading && departures.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-full gap-3 text-neutral-400 dark:text-neutral-600">
+            <div className="w-5 h-5 border-2 border-neutral-200 dark:border-neutral-800 border-t-neutral-400 rounded-full animate-spin" />
+            <p className="text-label">Hämtar avgångar</p>
+          </div>
+        ) : (
+          <>
+            {departures.map((dep, idx) => (
+              <DepartureRow
+                key={`${dep.line.designation}-${dep.destination}-${dep.scheduled}-${idx}`}
+                departure={dep}
+                emphasized={idx === 0 && dep.state !== 'CANCELLED'}
+                isDark={isDark}
+              />
+            ))}
+            {departures.length === 0 && !loading && (
+              <EmptyState lastUpdated={lastUpdatedStr} />
+            )}
+          </>
+        )}
+      </div>
 
       {/* Bottom bar */}
       <div className="flex justify-between items-center px-5 py-3 border-t border-neutral-200 dark:border-neutral-800">
         <span className="text-label text-neutral-500 dark:text-neutral-400">
           {lastUpdatedStr ? `Uppdaterad ${lastUpdatedStr}` : 'Laddar…'}
         </span>
-        <div className="flex items-center gap-3.5 text-neutral-500 dark:text-neutral-400">
-          <button onClick={onSearch} aria-label="Sök hållplats" className="p-1 -m-1">
-            <SearchIcon />
-          </button>
-          <button onClick={onRefresh} aria-label="Uppdatera" className="p-1 -m-1">
-            <RefreshIcon className={loading ? 'animate-spin' : ''} />
-          </button>
-        </div>
+        <button onClick={onRefresh} aria-label="Uppdatera" className="p-1 -m-1 text-neutral-500 dark:text-neutral-400">
+          <RefreshIcon className={loading ? 'animate-spin' : ''} />
+        </button>
       </div>
 
-      <footer className="text-center py-2.5 text-label-sm text-neutral-400 dark:text-neutral-600 safe-bottom">
+      <footer className="text-center py-2.5 text-label-sm text-neutral-400 dark:text-neutral-600">
         Data från trafiklab.se
       </footer>
     </div>

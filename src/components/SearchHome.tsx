@@ -7,7 +7,7 @@ interface SearchHomeProps {
   favorites: FavoriteSite[]
   onSelect: (stop: { id: number; name: string }) => void
   onFavoriteSelect: (stop: FavoriteSite) => void
-  onAllowLocation: () => void
+  onAllowLocation?: () => void
 }
 
 export function SearchHome({
@@ -29,7 +29,7 @@ export function SearchHome({
     : []
 
   return (
-    <div className="flex flex-col min-h-svh bg-white dark:bg-neutral-950 text-neutral-950 dark:text-neutral-50 safe-top">
+    <div className="h-full flex flex-col bg-white dark:bg-neutral-950 text-neutral-950 dark:text-neutral-50 overflow-y-auto safe-top">
       {/* Header */}
       <div className="px-5 pt-6 pb-4">
         <div className="text-label text-neutral-500 dark:text-neutral-400 mb-1.5">
@@ -95,13 +95,15 @@ export function SearchHome({
 
       <div className="flex-1" />
 
-      {/* Allow location button */}
-      <button
-        onClick={onAllowLocation}
-        className="text-center py-4 text-[13px] text-neutral-500 dark:text-neutral-400 transition-colors safe-bottom"
-      >
-        Tillåt plats istället →
-      </button>
+      {/* Allow location button — only shown when a handler is provided (e.g. permission gate flow) */}
+      {onAllowLocation && (
+        <button
+          onClick={onAllowLocation}
+          className="text-center py-4 text-[13px] text-neutral-500 dark:text-neutral-400 transition-colors"
+        >
+          Tillåt plats istället →
+        </button>
+      )}
     </div>
   )
 }
