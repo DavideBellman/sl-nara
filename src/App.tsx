@@ -1,7 +1,7 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { MapPin, Star, Search } from 'lucide-react'
 import type { Site, FavoriteSite } from './types'
-import { fetchSites } from './lib/api'
+import { fetchSites, fetchDepartures } from './lib/api'
 import { isTooFarFromStockholm, haversineKm } from './lib/geo'
 import { getItem, setItem } from './lib/storage'
 import { useGeolocation } from './hooks/useGeolocation'
@@ -29,7 +29,8 @@ export default function App() {
   const [selectedStop, setSelectedStop] = useState<SelectedStop | null>(null)
   const [isSearchOpen, setIsSearchOpen] = useState(false)
   const [favorites, setFavorites] = useState<FavoriteSite[]>(() => getItem<FavoriteSite[]>(FAVORITES_KEY) ?? [])
-  const [gpsStopIndex, setGpsStopIndex] = useState(0)
+  // Prevents GPS auto-selection from overriding a manual stop choice
+  const manuallySelectedRef = useRef(false)
 
   const geo = useGeolocation()
   const { nearestTen } = useNearestStop(geo.coords, sites)
@@ -41,22 +42,38 @@ export default function App() {
       .catch(err => { setSitesError(err instanceof Error ? err.message : 'Okänt fel'); setSitesLoading(false) })
   }, [])
 
+  // Parallel GPS stop selection: fetch departures for the N nearest stops at the same
+  // time and pick the nearest one that actually has service. This avoids the sequential
+  // advance bug where stops with temporarily 0 departures cause a worse stop to win.
   useEffect(() => {
     if (geo.status !== 'granted' || !geo.coords || nearestTen.length === 0 || sitesLoading) return
     if (isTooFarFromStockholm(geo.coords, sites)) return
-    const stop = nearestTen[gpsStopIndex]
-    if (stop) setSelectedStop({ id: stop.id, name: stop.name, viaGps: true })
-  }, [geo.status, geo.coords, nearestTen, gpsStopIndex, sitesLoading, sites])
+    if (manuallySelectedRef.current) return
 
-  useEffect(() => {
-    if (!selectedStop?.viaGps) return
-    if (loading || !lastUpdated) return
-    if (departures.length > 0) return
-    if (gpsStopIndex >= Math.min(nearestTen.length - 1, MAX_GPS_ATTEMPTS - 1)) return
-    setGpsStopIndex(i => i + 1)
-  }, [loading, lastUpdated, departures.length, selectedStop?.viaGps, gpsStopIndex, nearestTen.length])
+    let cancelled = false
+    const candidates = nearestTen.slice(0, MAX_GPS_ATTEMPTS)
+
+    Promise.all(
+      candidates.map(async stop => {
+        try {
+          const deps = await fetchDepartures(stop.id)
+          return { stop, count: deps.length }
+        } catch {
+          return { stop, count: 0 }
+        }
+      })
+    ).then(results => {
+      if (cancelled || manuallySelectedRef.current) return
+      // results preserves candidates order (nearest first); pick nearest with departures
+      const winner = results.find(r => r.count > 0) ?? results[0]
+      if (winner) setSelectedStop({ id: winner.stop.id, name: winner.stop.name, viaGps: true })
+    })
+
+    return () => { cancelled = true }
+  }, [geo.status, geo.coords, nearestTen, sitesLoading, sites])
 
   const handleStopSelect = useCallback((stop: { id: number; name: string }) => {
+    manuallySelectedRef.current = true
     setSelectedStop({ id: stop.id, name: stop.name, viaGps: false })
     setIsSearchOpen(false)
   }, [])
@@ -253,7 +270,7 @@ export default function App() {
               animation: 'spin 0.8s linear infinite',
             }} className="animate-spin" />
             <p style={{ fontSize: '12px', fontFamily: 'var(--font-mono)', margin: 0 }}>
-              {sitesLoading ? 'Laddar hållplatser…' : 'Hämtar din position…'}
+              {sitesLoading ? 'Laddar hållplatser…' : geo.status === 'requesting' ? 'Hämtar din position…' : 'Söker närmaste hållplats…'}
             </p>
           </div>
         )}
