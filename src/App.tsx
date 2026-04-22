@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { MapPin, Star, Search } from 'lucide-react'
 import type { Site, FavoriteSite } from './types'
 import { fetchSites, fetchDepartures } from './lib/api'
 import { isTooFarFromStockholm, haversineKm } from './lib/geo'
@@ -7,10 +6,10 @@ import { getItem, setItem } from './lib/storage'
 import { useGeolocation } from './hooks/useGeolocation'
 import { useNearestStop } from './hooks/useNearestStop'
 import { useDepartures } from './hooks/useDepartures'
-import { DeparturesList } from './components/DeparturesList'
-import { StopSearch } from './components/StopSearch'
+import { DeparturesView } from './components/DeparturesView'
+import { SearchSheet } from './components/SearchSheet'
+import { SearchHome } from './components/SearchHome'
 import { PermissionGate } from './components/PermissionGate'
-import { Footer } from './components/Footer'
 
 const FAVORITES_KEY = 'sl_favorites_v1'
 const MAX_FAVORITES = 5
@@ -28,6 +27,7 @@ export default function App() {
   const [sitesError, setSitesError] = useState<string | null>(null)
   const [selectedStop, setSelectedStop] = useState<SelectedStop | null>(null)
   const [isSearchOpen, setIsSearchOpen] = useState(false)
+  const [showSearchHome, setShowSearchHome] = useState(false)
   const [favorites, setFavorites] = useState<FavoriteSite[]>(() => getItem<FavoriteSite[]>(FAVORITES_KEY) ?? [])
   // Prevents GPS auto-selection from overriding a manual stop choice
   const manuallySelectedRef = useRef(false)
@@ -114,189 +114,92 @@ export default function App() {
     (!selectedStop && !geoFailed && !tooFar)
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100svh', background: 'var(--bg)' }}>
+    <div className="flex flex-col min-h-svh bg-white dark:bg-neutral-950">
+      {/* Search sheet (bottom sheet, overlays everything) */}
       {isSearchOpen && (
-        <StopSearch
+        <SearchSheet
           sites={sites}
           userCoords={geo.coords}
           nearestTen={nearestTen}
           favorites={favorites}
-          onSelect={handleStopSelect}
+          onSelect={stop => {
+            handleStopSelect(stop)
+          }}
           onClose={() => setIsSearchOpen(false)}
-          onFavoriteSelect={stop => { setSelectedStop({ id: stop.id, name: stop.name, viaGps: false }); setIsSearchOpen(false) }}
+          onFavoriteSelect={stop => {
+            manuallySelectedRef.current = true
+            setSelectedStop({ id: stop.id, name: stop.name, viaGps: false })
+            setIsSearchOpen(false)
+          }}
         />
       )}
 
-      {/* Header */}
-      <header
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: '12px 16px',
-          background: '#0a0a0a',
-          borderBottom: '1px solid #1a1a1a',
-          color: '#fafafa',
-          flexShrink: 0,
-        }}
-        className="safe-top"
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0 }}>
-          {/* SL badge */}
-          <span style={{
-            background: '#007db8',
-            color: 'white',
-            fontFamily: 'var(--font-mono)',
-            fontSize: '11px',
-            fontWeight: '700',
-            letterSpacing: '0.06em',
-            padding: '3px 7px',
-            borderRadius: '4px',
-            flexShrink: 0,
-          }}>
-            SL
-          </span>
+      {/* Full-page search home (when permission denied, user chose manual search) */}
+      {showSearchHome && !isSearchOpen && (
+        <SearchHome
+          sites={sites}
+          favorites={favorites}
+          onSelect={stop => {
+            manuallySelectedRef.current = true
+            setSelectedStop({ id: stop.id, name: stop.name, viaGps: false })
+            setShowSearchHome(false)
+          }}
+          onFavoriteSelect={stop => {
+            manuallySelectedRef.current = true
+            setSelectedStop({ id: stop.id, name: stop.name, viaGps: false })
+            setShowSearchHome(false)
+          }}
+          onAllowLocation={() => setShowSearchHome(false)}
+        />
+      )}
 
-          <div style={{ minWidth: 0 }}>
-            {selectedStop ? (
-              <>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <h1 style={{
-                    fontSize: '15px',
-                    fontWeight: '600',
-                    lineHeight: '1.3',
-                    margin: 0,
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                  }}>
-                    {selectedStop.name}
-                  </h1>
-                  {selectedStop.viaGps && (
-                    <MapPin size={12} style={{ color: '#3b82f6', flexShrink: 0 }} />
-                  )}
-                </div>
-                <p style={{
-                  fontSize: '11px',
-                  color: '#737373',
-                  fontFamily: 'var(--font-mono)',
-                  lineHeight: '1.3',
-                  margin: 0,
-                }}>
-                  {distLabel ? `${distLabel} · ` : ''}Avgångar i realtid
-                </p>
-              </>
-            ) : (
-              <h1 style={{ fontSize: '15px', fontWeight: '600', margin: 0 }}>SL Nära</h1>
-            )}
-          </div>
-        </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
-          {selectedStop && (
-            <button
-              onClick={toggleFavorite}
-              style={{
-                width: '40px',
-                height: '40px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                borderRadius: '6px',
-                border: 'none',
-                background: 'none',
-                cursor: 'pointer',
-                color: isFavorite ? '#eab308' : '#525252',
-                transition: 'color 0.15s',
-              }}
-              aria-label={isFavorite ? 'Ta bort favorit' : 'Lägg till favorit'}
-            >
-              <Star size={17} fill={isFavorite ? 'currentColor' : 'none'} />
-            </button>
+      {/* Main content (only shown when not in SearchHome) */}
+      {!showSearchHome && (
+        <>
+          {/* Permission gate */}
+          {showPermissionGate && !isInitialLoading && (
+            <PermissionGate
+              reason={gateReason}
+              onManualSearch={() => setShowSearchHome(true)}
+              onAllowLocation={() => window.location.reload()}
+            />
           )}
-          <button
-            onClick={() => setIsSearchOpen(true)}
-            style={{
-              width: '40px',
-              height: '40px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              borderRadius: '6px',
-              border: 'none',
-              background: 'none',
-              cursor: 'pointer',
-              color: '#737373',
-            }}
-            aria-label="Sök hållplats"
-          >
-            <Search size={17} />
-          </button>
-        </div>
-      </header>
 
-      <main style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
-        {sitesError && !sitesLoading && (
-          <div style={{
-            margin: '12px 16px',
-            padding: '10px 14px',
-            border: '1px solid #ef4444',
-            borderRadius: '6px',
-            color: '#ef4444',
-            fontSize: '13px',
-            textAlign: 'center',
-            fontFamily: 'var(--font-mono)',
-          }}>
-            Kunde inte ladda hållplatsdata: {sitesError}
-          </div>
-        )}
+          {/* Loading state */}
+          {isInitialLoading && !showPermissionGate && (
+            <div className="flex flex-col items-center justify-center flex-1 gap-3 text-neutral-400 dark:text-neutral-600">
+              <div className="w-5 h-5 border-2 border-neutral-200 dark:border-neutral-800 border-t-neutral-400 rounded-full animate-spin" />
+              <p className="text-label">
+                {sitesLoading ? 'Laddar hållplatser' : geo.status === 'requesting' ? 'Hämtar din position' : 'Söker närmaste hållplats'}
+              </p>
+            </div>
+          )}
 
-        {isInitialLoading && !showPermissionGate && (
-          <div style={{
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            flex: 1,
-            gap: '12px',
-            color: 'var(--text-faint)',
-          }}>
-            <div style={{
-              width: '20px',
-              height: '20px',
-              border: '2px solid var(--border)',
-              borderTopColor: 'var(--text-muted)',
-              borderRadius: '50%',
-              animation: 'spin 0.8s linear infinite',
-            }} className="animate-spin" />
-            <p style={{ fontSize: '12px', fontFamily: 'var(--font-mono)', margin: 0 }}>
-              {sitesLoading ? 'Laddar hållplatser…' : geo.status === 'requesting' ? 'Hämtar din position…' : 'Söker närmaste hållplats…'}
-            </p>
-          </div>
-        )}
+          {/* Departures view */}
+          {selectedStop && !isInitialLoading && (
+            <DeparturesView
+              stop={{ id: selectedStop.id, name: selectedStop.name, viaGps: selectedStop.viaGps }}
+              distanceLabel={distLabel}
+              isFavorite={isFavorite}
+              departures={departures}
+              loading={loading}
+              error={error}
+              lastUpdated={lastUpdated}
+              isOffline={isOffline}
+              onSearch={() => setIsSearchOpen(true)}
+              onRefresh={refresh}
+              onToggleFavorite={toggleFavorite}
+            />
+          )}
 
-        {showPermissionGate && (
-          <PermissionGate
-            reason={gateReason}
-            favorites={favorites}
-            onFavoriteSelect={stop => setSelectedStop({ id: stop.id, name: stop.name, viaGps: false })}
-            onSearchOpen={() => setIsSearchOpen(true)}
-          />
-        )}
-
-        {selectedStop && !isInitialLoading && (
-          <DeparturesList
-            departures={departures}
-            loading={loading}
-            error={error}
-            lastUpdated={lastUpdated}
-            isOffline={isOffline}
-            onRefresh={refresh}
-          />
-        )}
-      </main>
-
-      {!selectedStop && <Footer />}
+          {/* Site error banner (rare) */}
+          {sitesError && !sitesLoading && (
+            <div className="mx-4 mt-4 p-3 border border-red-200 dark:border-red-900 rounded text-red-600 dark:text-red-400 text-sm text-center font-mono">
+              Kunde inte ladda hållplatsdata
+            </div>
+          )}
+        </>
+      )}
     </div>
   )
 }

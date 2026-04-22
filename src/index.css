@@ -1,36 +1,27 @@
 @import "tailwindcss";
 
 @theme {
-  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
-  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
-
-  --color-bus: #d71d24;
-  --color-metro-green: #148541;
-  --color-metro-red: #d71d24;
-  --color-metro-blue: #007db8;
-  --color-train: #a25ea6;
-  --color-tram: #f36e21;
-  --color-ship: #00a0e3;
+  --font-sans: 'Geist', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'Geist Mono', ui-monospace, monospace;
 }
 
-:root {
-  --bg: #ffffff;
-  --surface: #fafafa;
-  --border: #e5e5e5;
-  --text: #0a0a0a;
-  --text-muted: #737373;
-  --text-faint: #a3a3a3;
-  --accent: #2563eb;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #0a0a0a;
-    --surface: #141414;
-    --border: #262626;
-    --text: #fafafa;
-    --text-muted: #a3a3a3;
-    --text-faint: #525252;
+@layer utilities {
+  .text-label {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.09em;
+  }
+  .text-label-sm {
+    font-family: var(--font-mono);
+    font-size: 9px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+  }
+  .tabular {
+    font-variant-numeric: tabular-nums;
   }
 }
 
@@ -42,8 +33,6 @@
 body {
   margin: 0;
   font-family: var(--font-sans);
-  background: var(--bg);
-  color: var(--text);
   overscroll-behavior: none;
   -webkit-font-smoothing: antialiased;
 }
@@ -56,6 +45,11 @@ body {
 
 .safe-top { padding-top: max(env(safe-area-inset-top), 0px); }
 .safe-bottom { padding-bottom: max(env(safe-area-inset-bottom), 0px); }
+
+@keyframes slide-up {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
 
 @keyframes sl-progress {
   from { transform: scaleX(0); }
