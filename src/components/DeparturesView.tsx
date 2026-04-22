@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
-import type { Departure } from '../types'
-import { getTransportColor } from '../lib/format'
+import type { Departure, TransportMode, PassengerLevel } from '../types'
+import { getTransportColor, getTransportLabel } from '../lib/format'
 import { StarIcon, StarFilledIcon, MapPinIcon, RefreshIcon, WarningIcon } from './icons'
+import { DepartureDetail } from './DepartureDetail'
 
 const DARK_COLORS: Record<string, string> = {
   '#d71d24': '#e24b4a',
@@ -22,6 +23,9 @@ function useDarkMode() {
   }, [])
   return dark
 }
+
+// Order transport modes: rail modes first, bus last
+const MODE_ORDER: TransportMode[] = ['METRO', 'TRAM', 'TRAIN', 'SHIP', 'BUS']
 
 interface DeparturesViewProps {
   stop: { id: number; name: string; viaGps: boolean }
@@ -49,13 +53,45 @@ export function DeparturesView({
   onToggleFavorite,
 }: DeparturesViewProps) {
   const isDark = useDarkMode()
+  const [selectedDeparture, setSelectedDeparture] = useState<Departure | null>(null)
+
+  // Reset detail view when stop changes
+  useEffect(() => { setSelectedDeparture(null) }, [stop.id])
 
   const lastUpdatedStr = lastUpdated
     ? lastUpdated.toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
     : null
 
+  // Group departures by transport mode
+  const modeGroups = (() => {
+    const map = new Map<TransportMode, Departure[]>()
+    for (const dep of departures) {
+      const mode = dep.line.transport_mode
+      if (!map.has(mode)) map.set(mode, [])
+      map.get(mode)!.push(dep)
+    }
+    return MODE_ORDER.filter(m => map.has(m)).map(m => ({ mode: m, deps: map.get(m)! }))
+  })()
+
+  const multiMode = modeGroups.length > 1
+
+  // Show detail when a departure is tapped
+  if (selectedDeparture) {
+    return (
+      <div className="h-full flex flex-col bg-white dark:bg-neutral-950">
+        <DepartureDetail
+          departure={selectedDeparture}
+          stopName={stop.name}
+          isDark={isDark}
+          onBack={() => setSelectedDeparture(null)}
+        />
+      </div>
+    )
+  }
+
   return (
     <div className="h-full flex flex-col bg-white dark:bg-neutral-950 text-neutral-950 dark:text-neutral-50">
+
       {/* Offline banner */}
       {isOffline && (
         <div className="px-5 py-2 bg-amber-50 dark:bg-amber-950 border-b border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-400 text-label text-center">
@@ -79,9 +115,7 @@ export function DeparturesView({
         </div>
         <h1 className="text-[20px] font-semibold tracking-tight my-0.5 flex items-center gap-1.5">
           {stop.name}
-          {stop.viaGps && (
-            <MapPinIcon size={13} className="text-blue-500 shrink-0" />
-          )}
+          {stop.viaGps && <MapPinIcon size={13} className="text-blue-500 shrink-0" />}
         </h1>
         <div className="font-mono text-[11px] text-neutral-500 dark:text-neutral-400">
           {distanceLabel ? `${distanceLabel} · GPS` : 'Manuellt vald'}
@@ -95,7 +129,7 @@ export function DeparturesView({
         </div>
       )}
 
-      {/* Scrollable list */}
+      {/* Departure list */}
       <div className="flex-1 overflow-y-auto">
         {loading && departures.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full gap-3 text-neutral-400 dark:text-neutral-600">
@@ -104,14 +138,28 @@ export function DeparturesView({
           </div>
         ) : (
           <>
-            {departures.map((dep, idx) => (
-              <DepartureRow
-                key={`${dep.line.designation}-${dep.destination}-${dep.scheduled}-${idx}`}
-                departure={dep}
-                emphasized={idx === 0 && dep.state !== 'CANCELLED'}
-                isDark={isDark}
-              />
+            {modeGroups.map(({ mode, deps }) => (
+              <div key={mode}>
+                {/* Section header — only shown when multiple transport modes */}
+                {multiMode && (
+                  <div className="px-5 pt-4 pb-2 border-b border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-900/60">
+                    <span className="text-label text-neutral-500 dark:text-neutral-400">
+                      {getTransportLabel(mode)}
+                    </span>
+                  </div>
+                )}
+                {deps.map((dep, idx) => (
+                  <DepartureRow
+                    key={`${dep.line.designation}-${dep.destination}-${dep.scheduled}-${idx}`}
+                    departure={dep}
+                    emphasized={!multiMode && idx === 0 && dep.state !== 'CANCELLED'}
+                    isDark={isDark}
+                    onClick={() => setSelectedDeparture(dep)}
+                  />
+                ))}
+              </div>
             ))}
+
             {departures.length === 0 && !loading && (
               <EmptyState lastUpdated={lastUpdatedStr} />
             )}
@@ -136,35 +184,79 @@ export function DeparturesView({
   )
 }
 
+// ── Passenger level bars ──────────────────────────────────────────────────────
+
+function PassengerBars({ level, isDark }: { level: PassengerLevel; isDark: boolean }) {
+  let bars = 0
+  let color = ''
+  switch (level) {
+    case 'EMPTY':               bars = 1; color = '#16a34a'; break
+    case 'SEATS_AVAILABLE':     bars = 2; color = '#16a34a'; break
+    case 'STANDING_PASSENGERS': bars = 3; color = '#b45309'; break
+    case 'FULL':                bars = 4; color = '#dc2626'; break
+    default: return null
+  }
+  return (
+    <div className="flex items-end gap-[2.5px] shrink-0" aria-hidden>
+      {[1, 2, 3, 4].map(i => (
+        <div
+          key={i}
+          style={{
+            width: 2.5,
+            height: 4 + i * 2.5,
+            background: i <= bars ? color : isDark ? '#404040' : '#e5e7eb',
+            borderRadius: 1,
+          }}
+        />
+      ))}
+    </div>
+  )
+}
+
+// ── Departure row ─────────────────────────────────────────────────────────────
+
 interface DepartureRowProps {
   departure: Departure
   emphasized: boolean
   isDark: boolean
+  onClick: () => void
 }
 
-function DepartureRow({ departure, emphasized, isDark }: DepartureRowProps) {
+function DepartureRow({ departure, emphasized, isDark, onClick }: DepartureRowProps) {
   const isCancelled = departure.state === 'CANCELLED'
   const lightColor = getTransportColor(departure.line.transport_mode, departure.line.group_of_lines)
-  const darkColor = DARK_COLORS[lightColor] ?? lightColor
-  const barColor = isDark ? darkColor : lightColor
+  const barColor = isDark ? (DARK_COLORS[lightColor] ?? lightColor) : lightColor
   const hasDeviation = departure.deviations.length > 0
+  const passengerLevel = departure.journey?.passenger_level
 
   return (
-    <div
+    <button
+      onClick={onClick}
       className={[
-        'px-5 py-3.5 border-b border-neutral-200 dark:border-neutral-800',
+        'w-full px-5 py-3.5 border-b border-neutral-200 dark:border-neutral-800 text-left',
+        'active:bg-black/[0.04] dark:active:bg-white/[0.05] transition-colors',
         emphasized ? 'bg-black/[0.028] dark:bg-white/[0.035]' : '',
       ].join(' ')}
     >
-      <div
-        className={[
-          'font-mono text-[44px] font-bold leading-none tracking-[-0.03em] tabular',
-          isCancelled
-            ? 'line-through decoration-2 text-neutral-400 dark:text-neutral-600'
-            : '',
-        ].join(' ')}
-      >
-        {departure.display}
+      <div className="flex items-start justify-between gap-2">
+        {/* Countdown */}
+        <div
+          className={[
+            'font-mono text-[44px] font-bold leading-none tracking-[-0.03em] tabular',
+            isCancelled
+              ? 'line-through decoration-2 text-neutral-400 dark:text-neutral-600'
+              : '',
+          ].join(' ')}
+        >
+          {departure.display}
+        </div>
+
+        {/* Passenger bars (top-right) */}
+        {passengerLevel && passengerLevel !== 'UNKNOWN' && (
+          <div className="pt-2">
+            <PassengerBars level={passengerLevel} isDark={isDark} />
+          </div>
+        )}
       </div>
 
       {isCancelled && (
@@ -177,12 +269,12 @@ function DepartureRow({ departure, emphasized, isDark }: DepartureRowProps) {
         <span
           className="w-0.5 h-3.5 rounded-[1px] shrink-0"
           style={{ background: barColor }}
-          aria-hidden="true"
+          aria-hidden
         />
         <span className="font-mono text-[12.5px] font-bold">
           {departure.line.designation}
         </span>
-        <span className="text-[12px] text-neutral-400 dark:text-neutral-600" aria-hidden="true">
+        <span className="text-[12px] text-neutral-400 dark:text-neutral-600" aria-hidden>
           →
         </span>
         <span className="text-[13.5px] font-medium">{departure.destination}</span>
@@ -193,7 +285,7 @@ function DepartureRow({ departure, emphasized, isDark }: DepartureRowProps) {
           />
         )}
       </div>
-    </div>
+    </button>
   )
 }
 

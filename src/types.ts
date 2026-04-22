@@ -50,8 +50,21 @@ export interface Departure {
   stop_point: StopPoint
   deviations: Deviation[]
   journey?: {
+    id?: string
     passenger_level?: PassengerLevel
+    state?: string
   }
+}
+
+export interface JourneyCall {
+  stop_point?: {
+    stop_area?: { name?: string }
+    designation?: string
+  }
+  stop_area?: { name?: string }
+  expected_departure?: string | null
+  expected_arrival?: string | null
+  state?: string
 }
 
 export interface FavoriteSite {
