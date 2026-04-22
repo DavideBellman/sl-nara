@@ -81,7 +81,6 @@ export function DeparturesView({
       <div className="h-full flex flex-col bg-white dark:bg-neutral-950">
         <DepartureDetail
           departure={selectedDeparture}
-          stopName={stop.name}
           isDark={isDark}
           onBack={() => setSelectedDeparture(null)}
         />
@@ -100,7 +99,10 @@ export function DeparturesView({
       )}
 
       {/* Header */}
-      <header className="px-5 pt-6 pb-4 border-b border-neutral-200 dark:border-neutral-800 safe-top">
+      <header
+        className="px-5 pb-4 border-b border-neutral-200 dark:border-neutral-800"
+        style={{ paddingTop: 'max(env(safe-area-inset-top), 1.5rem)' }}
+      >
         <div className="flex justify-between items-start mb-1.5">
           <span className="text-label text-neutral-500 dark:text-neutral-400">
             Närmaste hållplats

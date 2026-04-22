@@ -1,6 +1,5 @@
-import { useState, useEffect } from 'react'
-import type { Departure, PassengerLevel, JourneyCall } from '../types'
-import { fetchJourneyCalls } from '../lib/api'
+import { useEffect, useState } from 'react'
+import type { Departure, PassengerLevel } from '../types'
 import { getTransportColor } from '../lib/format'
 import { ArrowLeftIcon } from './icons'
 
@@ -22,27 +21,42 @@ function formatTime(iso: string | null | undefined): string | null {
 
 function crowdingInfo(level: PassengerLevel): { bars: number; color: string; label: string } | null {
   switch (level) {
-    case 'EMPTY':              return { bars: 1, color: '#16a34a', label: 'Tomt' }
-    case 'SEATS_AVAILABLE':    return { bars: 2, color: '#16a34a', label: 'Sittplatser finns' }
+    case 'EMPTY':               return { bars: 1, color: '#16a34a', label: 'Tomt' }
+    case 'SEATS_AVAILABLE':     return { bars: 2, color: '#16a34a', label: 'Sittplatser finns' }
     case 'STANDING_PASSENGERS': return { bars: 3, color: '#b45309', label: 'Stående passagerare' }
-    case 'FULL':               return { bars: 4, color: '#dc2626', label: 'Fullt' }
-    default:                   return null
+    case 'FULL':                return { bars: 4, color: '#dc2626', label: 'Fullt' }
+    default:                    return null
   }
 }
 
-function getCallName(call: JourneyCall): string {
-  return call.stop_point?.stop_area?.name ?? call.stop_area?.name ?? ''
+// Tick every 10 s so the display stays live while open
+function useLiveDisplay(departure: Departure) {
+  const [display, setDisplay] = useState(departure.display)
+  useEffect(() => {
+    const update = () => {
+      if (!departure.expected && !departure.scheduled) return
+      const targetMs = departure.expected
+        ? new Date(departure.expected).getTime()
+        : new Date(departure.scheduled).getTime()
+      const diffMin = Math.round((targetMs - Date.now()) / 60000)
+      if (diffMin <= 0) setDisplay('Nu')
+      else setDisplay(`${diffMin} min`)
+    }
+    update()
+    const id = setInterval(update, 10_000)
+    return () => clearInterval(id)
+  }, [departure.expected, departure.scheduled])
+  return display
 }
 
 interface Props {
   departure: Departure
-  stopName: string
   isDark: boolean
   onBack: () => void
 }
 
-export function DepartureDetail({ departure, stopName, isDark, onBack }: Props) {
-  const [calls, setCalls] = useState<JourneyCall[]>([])
+export function DepartureDetail({ departure, isDark, onBack }: Props) {
+  const liveDisplay = useLiveDisplay(departure)
 
   const lightColor = getTransportColor(departure.line.transport_mode, departure.line.group_of_lines)
   const barColor = isDark ? (DARK_COLORS[lightColor] ?? lightColor) : lightColor
@@ -58,25 +72,16 @@ export function DepartureDetail({ departure, stopName, isDark, onBack }: Props) 
     ? crowdingInfo(departure.journey.passenger_level)
     : null
 
-  useEffect(() => {
-    const id = departure.journey?.id
-    if (!id) return
-    fetchJourneyCalls(id).then(setCalls)
-  }, [departure.journey?.id])
-
-  // Find "Du är här" stop by matching site name
-  const normalizedStop = stopName.toLowerCase()
-  const currentIdx = calls.findIndex(c => getCallName(c).toLowerCase() === normalizedStop)
-  // Fallback: first ATSTOP
-  const atStopIdx = currentIdx >= 0 ? currentIdx
-    : calls.findIndex(c => c.state === 'ATSTOP')
-  const hereIdx = atStopIdx
+  const platform = departure.stop_point.designation
 
   return (
     <div className="h-full flex flex-col bg-white dark:bg-neutral-950 text-neutral-950 dark:text-neutral-50 overflow-y-auto animate-detail-in">
 
       {/* Back */}
-      <header className="flex items-center gap-2 px-5 pt-5 pb-2 safe-top">
+      <header
+        className="flex items-center gap-2 px-5 pb-2"
+        style={{ paddingTop: 'max(env(safe-area-inset-top), 1.25rem)' }}
+      >
         <button
           onClick={onBack}
           className="flex items-center gap-2 text-label text-neutral-500 dark:text-neutral-400 active:opacity-50 transition-opacity"
@@ -92,7 +97,7 @@ export function DepartureDetail({ departure, stopName, isDark, onBack }: Props) 
           'font-mono text-[72px] font-bold leading-none tracking-[-0.04em] tabular',
           isCancelled ? 'line-through decoration-[3px] text-neutral-300 dark:text-neutral-700' : '',
         ].join(' ')}>
-          {departure.display}
+          {isCancelled ? departure.display : liveDisplay}
         </div>
 
         {isCancelled ? (
@@ -114,7 +119,7 @@ export function DepartureDetail({ departure, stopName, isDark, onBack }: Props) 
         <span className="text-[14px] font-medium">{departure.destination}</span>
       </div>
 
-      <div className="border-t border-neutral-200 dark:border-neutral-800 mx-0" />
+      <div className="border-t border-neutral-200 dark:border-neutral-800" />
 
       <div className="flex-1 px-5">
 
@@ -141,51 +146,33 @@ export function DepartureDetail({ departure, stopName, isDark, onBack }: Props) 
           </section>
         )}
 
-        {/* POSITION */}
-        {calls.length > 0 && (
-          <section className="py-4 border-b border-neutral-200 dark:border-neutral-800">
-            <div className="text-label text-neutral-500 dark:text-neutral-400 mb-3">Position</div>
-            <div className="space-y-3.5">
-              {calls.map((call, i) => {
-                const name = getCallName(call)
-                if (!name) return null
-                const time = formatTime(call.expected_departure ?? call.expected_arrival)
-                const isPast = hereIdx >= 0 ? i < hereIdx : call.state === 'DEPARTED'
-                const isCurrent = hereIdx >= 0 ? i === hereIdx : false
-
-                return (
-                  <div key={i} className="flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div className="w-4 flex items-center justify-center shrink-0">
-                        {isCurrent ? (
-                          <div className="w-2 h-2 rounded-full bg-neutral-950 dark:bg-neutral-50" />
-                        ) : isPast ? (
-                          <div className="w-2 h-2 rounded-full border border-neutral-300 dark:border-neutral-700" />
-                        ) : (
-                          <div className="w-1.5 h-1.5 rounded-full bg-neutral-300 dark:bg-neutral-700" />
-                        )}
-                      </div>
-                      <span className={[
-                        'text-[13px] truncate',
-                        isCurrent ? 'font-semibold' : '',
-                        isPast ? 'line-through text-neutral-400 dark:text-neutral-600' : '',
-                      ].join(' ')}>
-                        {name}
-                      </span>
-                    </div>
-                    <span className={[
-                      'font-mono text-[11px] shrink-0',
-                      isCurrent ? 'text-neutral-700 dark:text-neutral-300' : 'text-neutral-500 dark:text-neutral-400',
-                      isPast ? 'text-neutral-400 dark:text-neutral-600' : '',
-                    ].join(' ')}>
-                      {isCurrent ? 'Du är här' : (time ?? '')}
-                    </span>
-                  </div>
-                )
-              })}
+        {/* AVGÅNGSTID */}
+        <section className="py-4 border-b border-neutral-200 dark:border-neutral-800">
+          <div className="text-label text-neutral-500 dark:text-neutral-400 mb-3">Tidtabell</div>
+          <div className="space-y-2">
+            <div className="flex justify-between items-center">
+              <span className="text-[13px] text-neutral-600 dark:text-neutral-400">Planerad avgång</span>
+              <span className="font-mono text-[13px]">{scheduledTime ?? '—'}</span>
             </div>
-          </section>
-        )}
+            {departure.expected && departure.expected !== departure.scheduled && (
+              <div className="flex justify-between items-center">
+                <span className="text-[13px] text-neutral-600 dark:text-neutral-400">Förväntad avgång</span>
+                <span className={[
+                  'font-mono text-[13px]',
+                  delayMin > 0 ? 'text-amber-600 dark:text-amber-500' : 'text-green-600 dark:text-green-500',
+                ].join(' ')}>
+                  {formatTime(departure.expected) ?? '—'}
+                </span>
+              </div>
+            )}
+            {platform && (
+              <div className="flex justify-between items-center">
+                <span className="text-[13px] text-neutral-600 dark:text-neutral-400">Perron / läge</span>
+                <span className="font-mono text-[13px]">{platform}</span>
+              </div>
+            )}
+          </div>
+        </section>
 
         {/* AVVIKELSE */}
         {departure.deviations.length > 0 && (

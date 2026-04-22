@@ -30,7 +30,10 @@ export function FavoritesTab({ favorites, sites, userCoords, onSelect }: Favorit
 
   return (
     <div className="h-full flex flex-col bg-white dark:bg-neutral-950 text-neutral-950 dark:text-neutral-50 overflow-y-auto">
-      <header className="px-5 pt-6 pb-4 border-b border-neutral-200 dark:border-neutral-800 safe-top">
+      <header
+        className="px-5 pb-4 border-b border-neutral-200 dark:border-neutral-800"
+        style={{ paddingTop: 'max(env(safe-area-inset-top), 1.5rem)' }}
+      >
         <span
           className="font-mono font-medium uppercase text-neutral-500 dark:text-neutral-400"
           style={{ fontSize: '10px', letterSpacing: '0.09em' }}
