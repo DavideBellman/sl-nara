@@ -13,6 +13,8 @@ import { Footer } from './components/Footer'
 
 const FAVORITES_KEY = 'sl_favorites_v1'
 const MAX_FAVORITES = 5
+// How many nearest stops to try before giving up on auto-selection
+const MAX_GPS_ATTEMPTS = 5
 
 interface SelectedStop {
   id: number
@@ -27,10 +29,12 @@ export default function App() {
   const [selectedStop, setSelectedStop] = useState<SelectedStop | null>(null)
   const [isSearchOpen, setIsSearchOpen] = useState(false)
   const [favorites, setFavorites] = useState<FavoriteSite[]>(() => getItem<FavoriteSite[]>(FAVORITES_KEY) ?? [])
-  const [autoSelectedFromGps, setAutoSelectedFromGps] = useState(false)
+
+  // Which index into nearestTen we're currently trying via GPS auto-selection
+  const [gpsStopIndex, setGpsStopIndex] = useState(0)
 
   const geo = useGeolocation()
-  const { nearest, nearestTen } = useNearestStop(geo.coords, sites)
+  const { nearestTen } = useNearestStop(geo.coords, sites)
   const { departures, loading, error, lastUpdated, refresh, isOffline } = useDepartures(selectedStop?.id ?? null)
 
   useEffect(() => {
@@ -39,13 +43,23 @@ export default function App() {
       .catch(err => { setSitesError(err instanceof Error ? err.message : 'Okänt fel'); setSitesLoading(false) })
   }, [])
 
+  // Select the current GPS candidate stop
   useEffect(() => {
-    if (autoSelectedFromGps) return
-    if (geo.status !== 'granted' || !geo.coords || !nearest || sitesLoading) return
+    if (geo.status !== 'granted' || !geo.coords || nearestTen.length === 0 || sitesLoading) return
     if (isTooFarFromStockholm(geo.coords, sites)) return
-    setSelectedStop({ id: nearest.id, name: nearest.name, viaGps: true })
-    setAutoSelectedFromGps(true)
-  }, [geo.status, geo.coords, nearest, sitesLoading, sites, autoSelectedFromGps])
+    const stop = nearestTen[gpsStopIndex]
+    if (stop) setSelectedStop({ id: stop.id, name: stop.name, viaGps: true })
+  }, [geo.status, geo.coords, nearestTen, gpsStopIndex, sitesLoading, sites])
+
+  // Auto-advance to next nearest stop if this one returned 0 departures.
+  // Many sites in SL's database (schools, landmarks) exist but have no scheduled service.
+  useEffect(() => {
+    if (!selectedStop?.viaGps) return
+    if (loading || !lastUpdated) return
+    if (departures.length > 0) return
+    if (gpsStopIndex >= Math.min(nearestTen.length - 1, MAX_GPS_ATTEMPTS - 1)) return
+    setGpsStopIndex(i => i + 1)
+  }, [loading, lastUpdated, departures.length, selectedStop?.viaGps, gpsStopIndex, nearestTen.length])
 
   const handleStopSelect = useCallback((stop: { id: number; name: string }) => {
     setSelectedStop({ id: stop.id, name: stop.name, viaGps: false })
@@ -56,12 +70,9 @@ export default function App() {
     if (!selectedStop) return
     setFavorites(prev => {
       const exists = prev.some(f => f.id === selectedStop.id)
-      let next: FavoriteSite[]
-      if (exists) {
-        next = prev.filter(f => f.id !== selectedStop.id)
-      } else {
-        next = prev.length >= MAX_FAVORITES ? prev : [...prev, { id: selectedStop.id, name: selectedStop.name }]
-      }
+      const next: FavoriteSite[] = exists
+        ? prev.filter(f => f.id !== selectedStop.id)
+        : prev.length >= MAX_FAVORITES ? prev : [...prev, { id: selectedStop.id, name: selectedStop.name }]
       setItem(FAVORITES_KEY, next)
       return next
     })
