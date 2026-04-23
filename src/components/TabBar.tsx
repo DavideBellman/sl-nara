@@ -21,16 +21,16 @@ export function TabBar({ activeTab, onTabChange }: TabBarProps) {
         label="Avgångar"
       />
       <TabItem
-        active={activeTab === 'favorites'}
-        onClick={() => onTabChange('favorites')}
-        icon={activeTab === 'favorites' ? <StarFilledIcon size={22} /> : <StarIcon size={22} />}
-        label="Favoriter"
-      />
-      <TabItem
         active={activeTab === 'search'}
         onClick={() => onTabChange('search')}
         icon={<SearchIcon size={22} />}
         label="Sök"
+      />
+      <TabItem
+        active={activeTab === 'favorites'}
+        onClick={() => onTabChange('favorites')}
+        icon={activeTab === 'favorites' ? <StarFilledIcon size={22} /> : <StarIcon size={22} />}
+        label="Favoriter"
       />
     </nav>
   )

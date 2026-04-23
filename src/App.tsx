@@ -109,7 +109,7 @@ export default function App() {
       const dy = e.changedTouches[0].clientY - startY
       if (Math.abs(dx) < 50 || Math.abs(dy) > Math.abs(dx) * 0.6) return
 
-      const tabs: Tab[] = ['departures', 'favorites', 'search']
+      const tabs: Tab[] = ['departures', 'search', 'favorites']
       const idx = tabs.indexOf(activeTabRef.current)
       let next: Tab | null = null
       if (dx < 0 && idx < tabs.length - 1) next = tabs[idx + 1]
