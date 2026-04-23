@@ -6,6 +6,7 @@ import { getItem, setItem } from './lib/storage'
 import { useGeolocation } from './hooks/useGeolocation'
 import { useNearestStop } from './hooks/useNearestStop'
 import { useDepartures } from './hooks/useDepartures'
+import { useTheme } from './hooks/useTheme'
 import { DeparturesView } from './components/DeparturesView'
 import { SearchSheet } from './components/SearchSheet'
 import { SearchHome } from './components/SearchHome'
@@ -30,6 +31,7 @@ export default function App() {
   const [sitesError, setSitesError] = useState<string | null>(null)
   const [selectedStop, setSelectedStop] = useState<SelectedStop | null>(null)
   const [isSearchOpen, setIsSearchOpen] = useState(false)
+  const { theme, setTheme } = useTheme()
   const [favorites, setFavorites] = useState<FavoriteSite[]>(() => getItem<FavoriteSite[]>(FAVORITES_KEY) ?? [])
   const [groups, setGroups] = useState<TravelGroup[]>(() => getItem<TravelGroup[]>(GROUPS_KEY) ?? [])
   const [activeTab, setActiveTab] = useState<Tab>('departures')
@@ -272,6 +274,8 @@ export default function App() {
               onSelect={handleStopSelect}
               groups={groups}
               onDeleteGroup={deleteGroup}
+              theme={theme}
+              onThemeChange={setTheme}
             />
           )}
 

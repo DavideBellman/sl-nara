@@ -3,6 +3,7 @@ import type { Departure, TransportMode, TravelGroup } from '../types'
 import { getTransportColor } from '../lib/format'
 import { StarIcon, StarFilledIcon, MapPinIcon, RefreshIcon, WarningIcon, SearchIcon, XIcon } from './icons'
 import { DepartureDetail } from './DepartureDetail'
+import { useDarkMode } from '../hooks/useDarkMode'
 
 const DARK_COLORS: Record<string, string> = {
   '#d71d24': '#e24b4a',
@@ -37,17 +38,6 @@ const MODE_COLOR: Partial<Record<TransportMode, string>> = {
 
 // Rail-first ordering
 const MODE_ORDER: TransportMode[] = ['METRO', 'TRAM', 'TRAIN', 'FERRY', 'SHIP', 'BUS', 'TAXI']
-
-function useDarkMode() {
-  const [dark, setDark] = useState(() => window.matchMedia('(prefers-color-scheme: dark)').matches)
-  useEffect(() => {
-    const mq = window.matchMedia('(prefers-color-scheme: dark)')
-    const onChange = (e: MediaQueryListEvent) => setDark(e.matches)
-    mq.addEventListener('change', onChange)
-    return () => mq.removeEventListener('change', onChange)
-  }, [])
-  return dark
-}
 
 interface DeparturesViewProps {
   stop: { id: number; name: string; viaGps: boolean }
@@ -138,7 +128,6 @@ export function DeparturesView({
       <div className="h-full flex flex-col bg-white dark:bg-neutral-950">
         <DepartureDetail
           departure={selectedDeparture}
-          isDark={isDark}
           onBack={() => setSelectedDeparture(null)}
         />
       </div>

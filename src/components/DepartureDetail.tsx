@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import type { Departure } from '../types'
 import { getTransportColor } from '../lib/format'
 import { ArrowLeftIcon } from './icons'
+import { useDarkMode } from '../hooks/useDarkMode'
 
 const DARK_COLORS: Record<string, string> = {
   '#d71d24': '#e24b4a',
@@ -38,11 +39,11 @@ function useLiveDisplay(departure: Departure) {
 
 interface Props {
   departure: Departure
-  isDark: boolean
   onBack: () => void
 }
 
-export function DepartureDetail({ departure, isDark, onBack }: Props) {
+export function DepartureDetail({ departure, onBack }: Props) {
+  const isDark = useDarkMode()
   const liveDisplay = useLiveDisplay(departure)
 
   const lightColor = getTransportColor(departure.line.transport_mode, departure.line.group_of_lines)
