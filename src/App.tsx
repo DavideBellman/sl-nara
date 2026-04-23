@@ -69,6 +69,14 @@ export default function App() {
   const { nearestTen } = useNearestStop(geo.coords, sites)
   const { departures, loading, error, lastUpdated, refresh, isOffline } = useDepartures(selectedStop?.id ?? null)
 
+  const handleFilterChange = useCallback((f: string) => {
+    setDepartureFilter(f)
+    if (f === '' && nearestTen.length > 0) {
+      manuallySelectedRef.current = false
+      setSelectedStop({ id: nearestTen[0].id, name: nearestTen[0].name, viaGps: true })
+    }
+  }, [nearestTen])
+
   useEffect(() => {
     fetchSites()
       .then(data => { setSites(data); setSitesLoading(false) })
@@ -301,7 +309,7 @@ export default function App() {
                   favorites={favorites}
                   onAddDestination={addDestination}
                   filter={departureFilter}
-                  onFilterChange={setDepartureFilter}
+                  onFilterChange={handleFilterChange}
                 />
               )}
 

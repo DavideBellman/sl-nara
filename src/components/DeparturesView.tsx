@@ -89,13 +89,23 @@ export function DeparturesView({
     : departures
 
   const modeGroups = (() => {
-    const map = new Map<TransportMode, Departure[]>()
+    const modeMap = new Map<TransportMode, Map<number, Departure[]>>()
     for (const dep of visibleDepartures) {
       const mode = dep.line.transport_mode
-      if (!map.has(mode)) map.set(mode, [])
-      map.get(mode)!.push(dep)
+      if (!modeMap.has(mode)) modeMap.set(mode, new Map())
+      const dirMap = modeMap.get(mode)!
+      const code = dep.direction_code ?? 0
+      if (!dirMap.has(code)) dirMap.set(code, [])
+      dirMap.get(code)!.push(dep)
     }
-    return MODE_ORDER.filter(m => map.has(m)).map(m => ({ mode: m, deps: map.get(m)! }))
+    return MODE_ORDER.filter(m => modeMap.has(m)).map(mode => {
+      const dirMap = modeMap.get(mode)!
+      const directions = [...dirMap.entries()].map(([code, deps]) => {
+        const uniqueDirs = [...new Set(deps.map(d => d.direction))].slice(0, 2)
+        return { code, label: uniqueDirs.join(' / '), deps }
+      })
+      return { mode, directions }
+    })
   })()
 
   const multiMode = modeGroups.length > 1
@@ -222,8 +232,10 @@ export function DeparturesView({
           </div>
         ) : (
           <>
-            {modeGroups.map(({ mode, deps }, groupIdx) => {
+            {modeGroups.map(({ mode, directions }, groupIdx) => {
               const isCollapsed = collapsed.has(mode)
+              const totalCount = directions.reduce((s, d) => s + d.deps.length, 0)
+              const multiDir = directions.length > 1
               return (
                 <div key={mode}>
                   {multiMode && (
@@ -232,18 +244,22 @@ export function DeparturesView({
                       color={MODE_COLOR[mode] ?? '#9ca3af'}
                       first={groupIdx === 0}
                       collapsed={isCollapsed}
-                      count={deps.length}
+                      count={totalCount}
                       onToggle={() => toggleMode(mode)}
                     />
                   )}
-                  {!isCollapsed && deps.map((dep, idx) => (
-                    <DepartureRow
-                      key={`${dep.line.designation}-${dep.destination}-${dep.scheduled}-${idx}`}
-                      departure={dep}
-                      emphasized={!multiMode && idx === 0 && dep.state !== 'CANCELLED'}
-                      isDark={isDark}
-                      onClick={() => setSelectedDeparture(dep)}
-                    />
+                  {!isCollapsed && directions.map(({ code, label, deps }) => (
+                    <div key={code}>
+                      {multiDir && <DirectionHeader label={label} />}
+                      {deps.map((dep, idx) => (
+                        <DepartureRow
+                          key={`${dep.line.designation}-${dep.destination}-${dep.scheduled}-${idx}`}
+                          departure={dep}
+                          isDark={isDark}
+                          onClick={() => setSelectedDeparture(dep)}
+                        />
+                      ))}
+                    </div>
                   ))}
                 </div>
               )
@@ -324,60 +340,82 @@ function ModeHeader({ label, color, first, collapsed, count, onToggle }: {
   )
 }
 
+// ── Direction sub-header ──────────────────────────────────────────────────────
+
+function DirectionHeader({ label }: { label: string }) {
+  return (
+    <div className="px-4 pt-3 pb-1 flex items-center gap-2">
+      <span className="font-mono text-[9.5px] font-semibold uppercase tracking-[0.1em] text-neutral-400 dark:text-neutral-600">
+        Mot {label}
+      </span>
+      <div className="flex-1 h-px bg-neutral-100 dark:bg-neutral-900" />
+    </div>
+  )
+}
+
 // ── Departure row ─────────────────────────────────────────────────────────────
 
 function formatDesignation(d: string | null | undefined, areaType?: string): string | null {
   if (!d) return null
   if (areaType === 'BUSTERM') return `Läge ${d}`
-  if (areaType === 'RAILWSTN') return `Spår ${d}`
-  return d
+  if (areaType === 'RAILWSTN' || areaType === 'METROSTN' || areaType === 'TRAMSTN') return `Spår ${d}`
+  return null
 }
 
-function DepartureRow({ departure, emphasized, isDark, onClick }: {
-  departure: Departure; emphasized: boolean; isDark: boolean; onClick: () => void
+function DepartureRow({ departure, isDark, onClick }: {
+  departure: Departure; isDark: boolean; onClick: () => void
 }) {
   const isCancelled = departure.state === 'CANCELLED'
   const lightColor = getTransportColor(departure.line.transport_mode, departure.line.group_of_lines)
-  const barColor = isDark ? (DARK_COLORS[lightColor] ?? lightColor) : lightColor
+  const badgeColor = isDark ? (DARK_COLORS[lightColor] ?? lightColor) : lightColor
   const hasDeviation = departure.deviations.length > 0
   const designation = formatDesignation(departure.stop_point.designation, departure.stop_area?.type)
 
   return (
     <button
       onClick={onClick}
-      className={[
-        'w-full px-5 py-3.5 border-b border-neutral-200 dark:border-neutral-800 text-left',
-        'active:bg-black/[0.04] dark:active:bg-white/[0.05] transition-colors',
-        emphasized ? 'bg-black/[0.028] dark:bg-white/[0.035]' : '',
-      ].join(' ')}
+      className="w-full flex items-center gap-3 px-4 py-3.5 border-b border-neutral-200 dark:border-neutral-800 text-left active:bg-black/[0.04] dark:active:bg-white/[0.05] transition-colors"
     >
-      <div className={['font-mono text-[44px] font-bold leading-none tracking-[-0.03em] tabular',
-        isCancelled ? 'line-through decoration-2 text-neutral-400 dark:text-neutral-600' : ''].join(' ')}>
-        {departure.display}
+      {/* Line badge */}
+      <div
+        className="h-7 px-2 rounded flex items-center justify-center shrink-0 min-w-[2.25rem]"
+        style={{ background: badgeColor }}
+      >
+        <span className="font-mono text-[11px] font-bold text-white leading-none">
+          {departure.line.designation}
+        </span>
       </div>
 
-      {isCancelled && (
-        <div className="font-mono text-[9px] font-semibold tracking-[0.12em] uppercase text-red-600 dark:text-red-500 mt-1.5">
-          Inställd
+      {/* Destination + subinfo */}
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-1.5 min-w-0">
+          <span className={[
+            'text-[14px] font-medium truncate leading-snug',
+            isCancelled ? 'line-through text-neutral-400 dark:text-neutral-600' : 'text-neutral-950 dark:text-neutral-50',
+          ].join(' ')}>
+            {departure.destination}
+          </span>
+          {hasDeviation && !isCancelled && (
+            <WarningIcon className="shrink-0 text-amber-600 dark:text-amber-500" aria-label="Avvikelse" />
+          )}
         </div>
-      )}
-
-      <div className="flex items-center gap-2 mt-2.5">
-        <span className="w-0.5 h-3.5 rounded-[1px] shrink-0" style={{ background: barColor }} aria-hidden />
-        <span className="font-mono text-[12.5px] font-bold">{departure.line.designation}</span>
-        <span className="text-[12px] text-neutral-400 dark:text-neutral-600" aria-hidden>→</span>
-        <span className="text-[13.5px] font-medium flex-1 min-w-0 truncate">{departure.destination}</span>
-        {hasDeviation && <WarningIcon className="shrink-0 text-amber-600 dark:text-amber-500" aria-label="Avvikelse" />}
-        {designation && (
-          <span className="font-mono text-[10px] text-neutral-500 dark:text-neutral-400 shrink-0 tabular">{designation}</span>
+        {(departure.via || designation) && (
+          <div className="font-mono text-[10px] text-neutral-400 dark:text-neutral-600 mt-0.5 truncate">
+            {departure.via ? `via ${departure.via}` : designation}
+            {departure.via && designation ? ` · ${designation}` : ''}
+          </div>
         )}
       </div>
 
-      {departure.via && (
-        <div className="font-mono text-[10.5px] text-neutral-500 dark:text-neutral-400 mt-0.5 ml-2.5">
-          via {departure.via}
-        </div>
-      )}
+      {/* Time */}
+      <div className={[
+        'font-mono font-bold tabular-nums shrink-0 leading-none',
+        isCancelled
+          ? 'text-[11px] tracking-wider uppercase text-red-600 dark:text-red-500'
+          : 'text-[20px] text-neutral-950 dark:text-neutral-50',
+      ].join(' ')}>
+        {isCancelled ? 'Inställd' : departure.display}
+      </div>
     </button>
   )
 }
@@ -605,7 +643,7 @@ function DestinationModal({ stopName, sites, currentDepartures, destinations, on
             <div className="border border-neutral-200 dark:border-neutral-800 rounded-lg overflow-hidden mb-3">
               {matches.map((dep, i) => {
                 const lightColor = getTransportColor(dep.line.transport_mode, dep.line.group_of_lines)
-                const barColor = isDark ? (DARK_COLORS[lightColor] ?? lightColor) : lightColor
+                const badgeColor = isDark ? (DARK_COLORS[lightColor] ?? lightColor) : lightColor
                 const designation = formatDesignation(dep.stop_point.designation, dep.stop_area?.type)
                 const isCancelled = dep.state === 'CANCELLED'
                 return (
@@ -619,7 +657,7 @@ function DestinationModal({ stopName, sites, currentDepartures, destinations, on
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5">
-                        <span className="w-0.5 h-3 rounded-[1px] shrink-0" style={{ background: barColor }} />
+                        <span className="w-0.5 h-3 rounded-[1px] shrink-0" style={{ background: badgeColor }} />
                         <span className="font-mono text-[12px] font-bold text-neutral-950 dark:text-neutral-50">{dep.line.designation}</span>
                         <span className="text-[11px] text-neutral-400 dark:text-neutral-600" aria-hidden>→</span>
                         <span className="text-[12px] font-medium text-neutral-700 dark:text-neutral-300 truncate">{dep.destination}</span>
