@@ -51,18 +51,6 @@ export async function fetchSites(): Promise<Site[]> {
   return sites
 }
 
-export async function fetchJourneyCalls(journeyId: string): Promise<import('../types').JourneyCall[]> {
-  try {
-    const res = await fetchWithRetry(`${BASE_URL}/journeys/${encodeURIComponent(journeyId)}/calls`)
-    const json: unknown = await res.json()
-    if (json && typeof json === 'object' && 'calls' in json) {
-      return (json as { calls: import('../types').JourneyCall[] }).calls ?? []
-    }
-    return []
-  } catch {
-    return []
-  }
-}
 
 export async function fetchDepartures(siteId: number, forecast = 60): Promise<Departure[]> {
   const res = await fetchWithRetry(
