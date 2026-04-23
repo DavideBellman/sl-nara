@@ -271,6 +271,7 @@ export function DeparturesView({
       {showDestinationModal && (
         <DestinationModal
           stopName={stop.name}
+          departures={departures}
           destinations={destinations}
           onFilter={q => { onFilterChange(q); setDestinationModalSeen(true) }}
           onDismiss={() => setDestinationModalSeen(true)}
@@ -512,8 +513,9 @@ function SaveStopSheet({ stopName, filter, onSave, onClose }: {
 
 // ── Destination modal (complex stop auto-popup) ───────────────────────────────
 
-function DestinationModal({ stopName, destinations, onFilter, onDismiss }: {
+function DestinationModal({ stopName, departures, destinations, onFilter, onDismiss }: {
   stopName: string
+  departures: Departure[]
   destinations: (Favorite & { filter: string })[]
   onFilter: (query: string) => void
   onDismiss: () => void
@@ -522,10 +524,12 @@ function DestinationModal({ stopName, destinations, onFilter, onDismiss }: {
   const inputRef = useRef<HTMLInputElement>(null)
   useEffect(() => { const t = setTimeout(() => inputRef.current?.focus(), 150); return () => clearTimeout(t) }, [])
 
-  function submit() {
-    if (value.trim()) onFilter(value.trim())
-    else onDismiss()
-  }
+  const trimmed = value.trim().toLowerCase()
+
+  const allDestinations = [...new Set(departures.map(d => d.destination))].sort()
+  const suggestions = trimmed
+    ? allDestinations.filter(d => d.toLowerCase().includes(trimmed))
+    : []
 
   return (
     <div className="absolute inset-0 z-30 flex flex-col" aria-modal="true" role="dialog">
@@ -537,7 +541,7 @@ function DestinationModal({ stopName, destinations, onFilter, onDismiss }: {
         <div className="text-label text-neutral-500 dark:text-neutral-400 mb-0.5">{stopName}</div>
         <h2 className="text-[22px] font-semibold tracking-tight mb-4 text-neutral-950 dark:text-neutral-50">Vart ska du?</h2>
 
-        {destinations.length > 0 && (
+        {destinations.length > 0 && !trimmed && (
           <div className="flex gap-2 overflow-x-auto no-scrollbar mb-4 -mx-5 px-5">
             {destinations.map(d => (
               <button key={d.id} onClick={() => onFilter(d.filter)}
@@ -551,13 +555,30 @@ function DestinationModal({ stopName, destinations, onFilter, onDismiss }: {
         <div className="flex items-center gap-2.5 px-3.5 h-[48px] border border-neutral-200 dark:border-neutral-800 rounded-lg focus-within:border-neutral-950 dark:focus-within:border-neutral-50 mb-3 transition-colors">
           <SearchIcon size={13} className="text-neutral-400 dark:text-neutral-600 shrink-0" />
           <input ref={inputRef} type="text" value={value} onChange={e => setValue(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && submit()} placeholder="Destination eller linjenummer…"
+            onKeyDown={e => { if (e.key === 'Enter' && suggestions.length === 1) onFilter(suggestions[0]); else if (e.key === 'Enter' && trimmed) onFilter(value.trim()) }}
+            placeholder="Destination eller linjenummer…"
             className="flex-1 bg-transparent font-mono text-[13px] outline-none placeholder:text-neutral-400 dark:placeholder:text-neutral-600 text-neutral-950 dark:text-neutral-50" />
           {value && <button onClick={() => setValue('')} className="p-1 -m-1 text-neutral-400 dark:text-neutral-600"><XIcon size={11} /></button>}
         </div>
 
-        <PrimaryBtn label="Visa avgångar" disabled={!value.trim()} onClick={submit} />
-        <GhostBtn label="Visa alla avgångar" onClick={onDismiss} />
+        {suggestions.length > 0 ? (
+          <div className="mb-3 border border-neutral-200 dark:border-neutral-800 rounded-lg overflow-hidden max-h-52 overflow-y-auto">
+            {suggestions.map(dest => (
+              <button
+                key={dest}
+                onClick={() => onFilter(dest)}
+                className="w-full px-4 py-3 text-left text-[14px] font-medium border-b border-neutral-200 dark:border-neutral-800 last:border-0 active:bg-black/[0.04] dark:active:bg-white/[0.05] text-neutral-950 dark:text-neutral-50"
+              >
+                {dest}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <>
+            <PrimaryBtn label="Visa avgångar" disabled={!trimmed} onClick={() => trimmed && onFilter(value.trim())} />
+            <GhostBtn label="Visa alla avgångar" onClick={onDismiss} />
+          </>
+        )}
       </div>
     </div>
   )
