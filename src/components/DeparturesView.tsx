@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import type { Departure, TransportMode } from '../types'
 import { getTransportColor } from '../lib/format'
 import { StarIcon, StarFilledIcon, MapPinIcon, RefreshIcon, WarningIcon, SearchIcon, XIcon } from './icons'
@@ -78,11 +78,13 @@ export function DeparturesView({
   const [selectedDeparture, setSelectedDeparture] = useState<Departure | null>(null)
   const [collapsed, setCollapsed] = useState<Set<TransportMode>>(new Set())
   const [filter, setFilter] = useState('')
+  const [destinationModalSeen, setDestinationModalSeen] = useState(false)
 
   useEffect(() => {
     setSelectedDeparture(null)
     setCollapsed(new Set())
     setFilter('')
+    setDestinationModalSeen(false)
   }, [stop.id])
 
   function toggleMode(mode: TransportMode) {
@@ -118,6 +120,14 @@ export function DeparturesView({
 
   const multiMode = modeGroups.length > 1
 
+  const distinctLineCount = new Set(departures.map(d => d.line.designation)).size
+  const showDestinationModal =
+    !filter &&
+    !destinationModalSeen &&
+    !loading &&
+    departures.length > 0 &&
+    (modeGroups.length > 2 || distinctLineCount > 6)
+
   if (selectedDeparture) {
     return (
       <div className="h-full flex flex-col bg-white dark:bg-neutral-950">
@@ -131,7 +141,7 @@ export function DeparturesView({
   }
 
   return (
-    <div className="h-full flex flex-col bg-white dark:bg-neutral-950 text-neutral-950 dark:text-neutral-50">
+    <div className="h-full flex flex-col bg-white dark:bg-neutral-950 text-neutral-950 dark:text-neutral-50 relative">
 
       {isOffline && (
         <div className="px-5 py-2 bg-amber-50 dark:bg-amber-950 border-b border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-400 text-label text-center">
@@ -245,6 +255,14 @@ export function DeparturesView({
       <footer className="text-center py-2.5 text-label-sm text-neutral-400 dark:text-neutral-600">
         Data från trafiklab.se
       </footer>
+
+      {showDestinationModal && (
+        <DestinationModal
+          stopName={stop.name}
+          onFilter={q => { setFilter(q); setDestinationModalSeen(true) }}
+          onDismiss={() => setDestinationModalSeen(true)}
+        />
+      )}
     </div>
   )
 }
@@ -378,6 +396,85 @@ function EmptyState({ lastUpdated }: { lastUpdated: string | null }) {
           Uppdaterad {lastUpdated}
         </div>
       )}
+    </div>
+  )
+}
+
+// ── Destination modal ─────────────────────────────────────────────────────────
+
+function DestinationModal({
+  stopName,
+  onFilter,
+  onDismiss,
+}: {
+  stopName: string
+  onFilter: (query: string) => void
+  onDismiss: () => void
+}) {
+  const [value, setValue] = useState('')
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    const t = setTimeout(() => inputRef.current?.focus(), 150)
+    return () => clearTimeout(t)
+  }, [])
+
+  function submit() {
+    if (value.trim()) onFilter(value.trim())
+    else onDismiss()
+  }
+
+  return (
+    <div className="absolute inset-0 z-30 flex flex-col" aria-modal="true" role="dialog">
+      <button
+        onClick={onDismiss}
+        aria-label="Visa alla avgångar"
+        className="flex-1 bg-black/30 dark:bg-black/50 backdrop-blur-[2px]"
+      />
+      <div
+        className="bg-white dark:bg-neutral-950 rounded-t-[18px] border-t border-neutral-200 dark:border-neutral-800 px-5 pt-3 safe-bottom"
+        style={{ animation: 'slide-up 260ms cubic-bezier(0.32, 0.72, 0, 1)', paddingBottom: 'max(env(safe-area-inset-bottom), 1.5rem)' }}
+      >
+        <div className="w-9 h-1 bg-neutral-300 dark:bg-neutral-700 rounded-full mx-auto mb-5 opacity-60" />
+
+        <div className="text-label text-neutral-500 dark:text-neutral-400 mb-0.5">{stopName}</div>
+        <h2 className="text-[22px] font-semibold tracking-tight mb-5 text-neutral-950 dark:text-neutral-50">
+          Vart ska du?
+        </h2>
+
+        <div className="flex items-center gap-2.5 px-3.5 h-[48px] border border-neutral-200 dark:border-neutral-800 rounded-lg focus-within:border-neutral-950 dark:focus-within:border-neutral-50 mb-3 transition-colors">
+          <SearchIcon size={13} className="text-neutral-400 dark:text-neutral-600 shrink-0" />
+          <input
+            ref={inputRef}
+            type="text"
+            value={value}
+            onChange={e => setValue(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && submit()}
+            placeholder="Destination eller linjenummer…"
+            className="flex-1 bg-transparent font-mono text-[13px] outline-none placeholder:text-neutral-400 dark:placeholder:text-neutral-600 text-neutral-950 dark:text-neutral-50"
+          />
+          {value && (
+            <button onClick={() => setValue('')} className="p-1 -m-1 text-neutral-400 dark:text-neutral-600">
+              <XIcon size={11} />
+            </button>
+          )}
+        </div>
+
+        <button
+          onClick={submit}
+          disabled={!value.trim()}
+          className="w-full h-[46px] bg-neutral-950 dark:bg-neutral-50 text-neutral-50 dark:text-neutral-950 rounded-lg font-mono text-[13px] font-medium disabled:opacity-25 active:opacity-75 transition-opacity mb-1"
+        >
+          Visa avgångar
+        </button>
+
+        <button
+          onClick={onDismiss}
+          className="w-full py-3.5 text-[13px] text-neutral-500 dark:text-neutral-400 active:opacity-50"
+        >
+          Visa alla avgångar
+        </button>
+      </div>
     </div>
   )
 }
