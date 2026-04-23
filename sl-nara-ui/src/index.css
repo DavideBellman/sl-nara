@@ -1,0 +1,40 @@
+@import url('https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: light dark;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    @apply font-sans antialiased text-neutral-950 bg-white;
+    font-feature-settings: 'ss01', 'cv11';
+  }
+
+  .dark body {
+    @apply text-neutral-50 bg-neutral-950;
+  }
+}
+
+@layer utilities {
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+
+  .text-label {
+    @apply font-mono text-[10px] uppercase tracking-[0.09em] font-medium;
+  }
+
+  .text-label-sm {
+    @apply font-mono text-[9px] uppercase tracking-[0.12em] font-medium;
+  }
+}

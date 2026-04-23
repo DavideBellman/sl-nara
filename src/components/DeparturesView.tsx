@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import type { Departure, TransportMode, TravelGroup } from '../types'
+import type { Departure, TransportMode, Favorite } from '../types'
 import { getTransportColor } from '../lib/format'
 import { StarIcon, StarFilledIcon, MapPinIcon, RefreshIcon, WarningIcon, SearchIcon, XIcon } from './icons'
 import { DepartureDetail } from './DepartureDetail'
@@ -14,29 +14,16 @@ const DARK_COLORS: Record<string, string> = {
   '#00a0e3': '#3bb6e8',
 }
 
-// Short display labels per mode
 const MODE_LABEL: Partial<Record<TransportMode, string>> = {
-  METRO: 'T-bana',
-  BUS: 'Buss',
-  TRAIN: 'Pendeltåg',
-  TRAM: 'Spårvagn',
-  SHIP: 'Båt',
-  FERRY: 'Färja',
-  TAXI: 'Taxi',
+  METRO: 'T-bana', BUS: 'Buss', TRAIN: 'Pendeltåg',
+  TRAM: 'Spårvagn', SHIP: 'Båt', FERRY: 'Färja', TAXI: 'Taxi',
 }
 
-// Representative color per mode (for section header dot)
 const MODE_COLOR: Partial<Record<TransportMode, string>> = {
-  METRO: '#007db8',
-  BUS: '#d71d24',
-  TRAIN: '#a25ea6',
-  TRAM: '#f36e21',
-  SHIP: '#00a0e3',
-  FERRY: '#00a0e3',
-  TAXI: '#f59e0b',
+  METRO: '#007db8', BUS: '#d71d24', TRAIN: '#a25ea6',
+  TRAM: '#f36e21', SHIP: '#00a0e3', FERRY: '#00a0e3', TAXI: '#f59e0b',
 }
 
-// Rail-first ordering
 const MODE_ORDER: TransportMode[] = ['METRO', 'TRAM', 'TRAIN', 'FERRY', 'SHIP', 'BUS', 'TAXI']
 
 interface DeparturesViewProps {
@@ -49,36 +36,32 @@ interface DeparturesViewProps {
   lastUpdated: Date | null
   isOffline: boolean
   onRefresh: () => void
-  onToggleFavorite: () => void
-  groups: TravelGroup[]
-  onSaveGroup: (name: string, query: string) => void
+  // Unified favorites
+  favorites: Favorite[]
+  onAddStopFavorite: (filter?: string) => void
+  onRemoveStopFavorite: () => void
+  onAddDestination: (label: string, filter: string) => void
+  // Controlled filter (lifted to App)
+  filter: string
+  onFilterChange: (f: string) => void
 }
 
 export function DeparturesView({
-  stop,
-  distanceLabel,
-  isFavorite,
-  departures,
-  loading,
-  error,
-  lastUpdated,
-  isOffline,
-  onRefresh,
-  onToggleFavorite,
-  groups,
-  onSaveGroup,
+  stop, distanceLabel, isFavorite, departures, loading, error,
+  lastUpdated, isOffline, onRefresh,
+  favorites, onAddStopFavorite, onRemoveStopFavorite, onAddDestination,
+  filter, onFilterChange,
 }: DeparturesViewProps) {
   const isDark = useDarkMode()
   const [selectedDeparture, setSelectedDeparture] = useState<Departure | null>(null)
   const [collapsed, setCollapsed] = useState<Set<TransportMode>>(new Set())
-  const [filter, setFilter] = useState('')
   const [destinationModalSeen, setDestinationModalSeen] = useState(false)
-  const [saveSheetOpen, setSaveSheetOpen] = useState(false)
+  const [saveDestSheetOpen, setSaveDestSheetOpen] = useState(false)
+  const [saveStopSheetOpen, setSaveStopSheetOpen] = useState(false)
 
   useEffect(() => {
     setSelectedDeparture(null)
     setCollapsed(new Set())
-    setFilter('')
     setDestinationModalSeen(false)
   }, [stop.id])
 
@@ -115,6 +98,8 @@ export function DeparturesView({
 
   const multiMode = modeGroups.length > 1
 
+  const destinations = favorites.filter(f => f.type === 'destination') as (Favorite & { filter: string })[]
+
   const distinctLineCount = new Set(departures.map(d => d.line.designation)).size
   const showDestinationModal =
     !filter &&
@@ -123,13 +108,20 @@ export function DeparturesView({
     departures.length > 0 &&
     (modeGroups.length > 2 || distinctLineCount > 6)
 
+  function handleStarTap() {
+    if (isFavorite) {
+      onRemoveStopFavorite()
+    } else if (filterTrimmed) {
+      setSaveStopSheetOpen(true)
+    } else {
+      onAddStopFavorite()
+    }
+  }
+
   if (selectedDeparture) {
     return (
       <div className="h-full flex flex-col bg-white dark:bg-neutral-950">
-        <DepartureDetail
-          departure={selectedDeparture}
-          onBack={() => setSelectedDeparture(null)}
-        />
+        <DepartureDetail departure={selectedDeparture} onBack={() => setSelectedDeparture(null)} />
       </div>
     )
   }
@@ -148,11 +140,9 @@ export function DeparturesView({
         style={{ paddingTop: 'max(env(safe-area-inset-top), 1.5rem)' }}
       >
         <div className="flex justify-between items-start mb-1.5">
-          <span className="text-label text-neutral-500 dark:text-neutral-400">
-            Närmaste hållplats
-          </span>
+          <span className="text-label text-neutral-500 dark:text-neutral-400">Närmaste hållplats</span>
           <button
-            onClick={onToggleFavorite}
+            onClick={handleStarTap}
             aria-label={isFavorite ? 'Ta bort favorit' : 'Lägg till favorit'}
             className="p-1 -m-1 -mt-0.5 text-neutral-950 dark:text-neutral-50"
           >
@@ -168,34 +158,32 @@ export function DeparturesView({
         </div>
       </header>
 
+      {/* Filter bar */}
       <div className="flex items-center gap-2.5 px-5 py-2 border-b border-neutral-200 dark:border-neutral-800">
         <SearchIcon size={12} className="text-neutral-400 dark:text-neutral-600 shrink-0" />
         <input
           type="text"
           value={filter}
-          onChange={e => setFilter(e.target.value)}
+          onChange={e => onFilterChange(e.target.value)}
           placeholder="Filtrera destination eller linje…"
           className="flex-1 bg-transparent font-mono text-[12.5px] outline-none placeholder:text-neutral-400 dark:placeholder:text-neutral-600 text-neutral-950 dark:text-neutral-50"
         />
         {filter && (
-          <button
-            onClick={() => setFilter('')}
-            aria-label="Rensa filter"
-            className="p-1 -m-1 text-neutral-400 dark:text-neutral-600 active:opacity-50"
-          >
+          <button onClick={() => onFilterChange('')} aria-label="Rensa filter" className="p-1 -m-1 text-neutral-400 dark:text-neutral-600 active:opacity-50">
             <XIcon size={11} />
           </button>
         )}
       </div>
 
-      {(groups.length > 0 || filterTrimmed) && (
+      {/* Destination chips */}
+      {(destinations.length > 0 || filterTrimmed) && (
         <div className="flex gap-2 px-5 py-2.5 overflow-x-auto no-scrollbar border-b border-neutral-200 dark:border-neutral-800">
-          {groups.map(g => {
-            const active = g.query.toLowerCase() === filterTrimmed
+          {destinations.map(d => {
+            const active = d.filter.toLowerCase() === filterTrimmed
             return (
               <button
-                key={g.id}
-                onClick={() => setFilter(active ? '' : g.query)}
+                key={d.id}
+                onClick={() => onFilterChange(active ? '' : d.filter)}
                 className={[
                   'shrink-0 h-7 px-3 rounded-full font-mono text-[11px] font-medium transition-colors',
                   active
@@ -203,13 +191,13 @@ export function DeparturesView({
                     : 'border border-neutral-200 dark:border-neutral-800 text-neutral-700 dark:text-neutral-300 active:bg-black/[0.04] dark:active:bg-white/[0.05]',
                 ].join(' ')}
               >
-                {g.name}
+                {d.label}
               </button>
             )
           })}
-          {filterTrimmed && !groups.some(g => g.query.toLowerCase() === filterTrimmed) && (
+          {filterTrimmed && !destinations.some(d => d.filter.toLowerCase() === filterTrimmed) && (
             <button
-              onClick={() => setSaveSheetOpen(true)}
+              onClick={() => setSaveDestSheetOpen(true)}
               className="shrink-0 h-7 px-3 rounded-full border border-dashed border-neutral-300 dark:border-neutral-700 font-mono text-[11px] text-neutral-500 dark:text-neutral-400 active:opacity-60"
             >
               + Spara
@@ -260,7 +248,7 @@ export function DeparturesView({
             })}
             {visibleDepartures.length === 0 && !loading && (
               filterTrimmed
-                ? <FilterEmptyState query={filter.trim()} onClear={() => setFilter('')} />
+                ? <FilterEmptyState query={filter.trim()} onClear={() => onFilterChange('')} />
                 : <EmptyState lastUpdated={lastUpdatedStr} />
             )}
           </>
@@ -283,17 +271,26 @@ export function DeparturesView({
       {showDestinationModal && (
         <DestinationModal
           stopName={stop.name}
-          groups={groups}
-          onFilter={q => { setFilter(q); setDestinationModalSeen(true) }}
+          destinations={destinations}
+          onFilter={q => { onFilterChange(q); setDestinationModalSeen(true) }}
           onDismiss={() => setDestinationModalSeen(true)}
         />
       )}
 
-      {saveSheetOpen && (
-        <SaveGroupSheet
-          query={filter.trim()}
-          onSave={(name) => { onSaveGroup(name, filter.trim()); setSaveSheetOpen(false) }}
-          onClose={() => setSaveSheetOpen(false)}
+      {saveDestSheetOpen && (
+        <SaveDestinationSheet
+          filter={filter.trim()}
+          onSave={(label) => { onAddDestination(label, filter.trim()); setSaveDestSheetOpen(false) }}
+          onClose={() => setSaveDestSheetOpen(false)}
+        />
+      )}
+
+      {saveStopSheetOpen && (
+        <SaveStopSheet
+          stopName={stop.name}
+          filter={filter.trim()}
+          onSave={(withFilter) => { onAddStopFavorite(withFilter ? filter.trim() : undefined); setSaveStopSheetOpen(false) }}
+          onClose={() => setSaveStopSheetOpen(false)}
         />
       )}
     </div>
@@ -302,11 +299,8 @@ export function DeparturesView({
 
 // ── Mode section header ───────────────────────────────────────────────────────
 
-function ModeHeader({
-  label, color, first, collapsed, count, onToggle,
-}: {
-  label: string; color: string; first: boolean
-  collapsed: boolean; count: number; onToggle: () => void
+function ModeHeader({ label, color, first, collapsed, count, onToggle }: {
+  label: string; color: string; first: boolean; collapsed: boolean; count: number; onToggle: () => void
 }) {
   return (
     <button
@@ -316,13 +310,9 @@ function ModeHeader({
       <div className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: color }} />
       <span className="text-label text-neutral-500 dark:text-neutral-400 shrink-0">{label}</span>
       <div className="flex-1 h-px bg-neutral-200 dark:bg-neutral-800" />
-      {collapsed && (
-        <span className="font-mono text-[10px] text-neutral-400 dark:text-neutral-600 shrink-0">{count}</span>
-      )}
-      <svg
-        width="10" height="10" viewBox="0 0 10 10" fill="none"
-        className={['text-neutral-400 dark:text-neutral-600 shrink-0 transition-transform duration-200', collapsed ? '-rotate-90' : ''].join(' ')}
-      >
+      {collapsed && <span className="font-mono text-[10px] text-neutral-400 dark:text-neutral-600 shrink-0">{count}</span>}
+      <svg width="10" height="10" viewBox="0 0 10 10" fill="none"
+        className={['text-neutral-400 dark:text-neutral-600 shrink-0 transition-transform duration-200', collapsed ? '-rotate-90' : ''].join(' ')}>
         <path d="M2 4l3 3 3-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
     </button>
@@ -331,13 +321,6 @@ function ModeHeader({
 
 // ── Departure row ─────────────────────────────────────────────────────────────
 
-interface DepartureRowProps {
-  departure: Departure
-  emphasized: boolean
-  isDark: boolean
-  onClick: () => void
-}
-
 function formatDesignation(d: string | null | undefined, areaType?: string): string | null {
   if (!d) return null
   if (areaType === 'BUSTERM') return `Läge ${d}`
@@ -345,7 +328,9 @@ function formatDesignation(d: string | null | undefined, areaType?: string): str
   return d
 }
 
-function DepartureRow({ departure, emphasized, isDark, onClick }: DepartureRowProps) {
+function DepartureRow({ departure, emphasized, isDark, onClick }: {
+  departure: Departure; emphasized: boolean; isDark: boolean; onClick: () => void
+}) {
   const isCancelled = departure.state === 'CANCELLED'
   const lightColor = getTransportColor(departure.line.transport_mode, departure.line.group_of_lines)
   const barColor = isDark ? (DARK_COLORS[lightColor] ?? lightColor) : lightColor
@@ -361,12 +346,8 @@ function DepartureRow({ departure, emphasized, isDark, onClick }: DepartureRowPr
         emphasized ? 'bg-black/[0.028] dark:bg-white/[0.035]' : '',
       ].join(' ')}
     >
-      <div
-        className={[
-          'font-mono text-[44px] font-bold leading-none tracking-[-0.03em] tabular',
-          isCancelled ? 'line-through decoration-2 text-neutral-400 dark:text-neutral-600' : '',
-        ].join(' ')}
-      >
+      <div className={['font-mono text-[44px] font-bold leading-none tracking-[-0.03em] tabular',
+        isCancelled ? 'line-through decoration-2 text-neutral-400 dark:text-neutral-600' : ''].join(' ')}>
         {departure.display}
       </div>
 
@@ -381,13 +362,9 @@ function DepartureRow({ departure, emphasized, isDark, onClick }: DepartureRowPr
         <span className="font-mono text-[12.5px] font-bold">{departure.line.designation}</span>
         <span className="text-[12px] text-neutral-400 dark:text-neutral-600" aria-hidden>→</span>
         <span className="text-[13.5px] font-medium flex-1 min-w-0 truncate">{departure.destination}</span>
-        {hasDeviation && (
-          <WarningIcon className="shrink-0 text-amber-600 dark:text-amber-500" aria-label="Avvikelse" />
-        )}
+        {hasDeviation && <WarningIcon className="shrink-0 text-amber-600 dark:text-amber-500" aria-label="Avvikelse" />}
         {designation && (
-          <span className="font-mono text-[10px] text-neutral-500 dark:text-neutral-400 shrink-0 tabular">
-            {designation}
-          </span>
+          <span className="font-mono text-[10px] text-neutral-500 dark:text-neutral-400 shrink-0 tabular">{designation}</span>
         )}
       </div>
 
@@ -421,38 +398,129 @@ function EmptyState({ lastUpdated }: { lastUpdated: string | null }) {
         <circle cx="12" cy="12" r="10" />
         <polyline points="12 6 12 12 16 14" />
       </svg>
-      <div className="text-[14px] text-neutral-500 dark:text-neutral-400 mb-1">
-        Inga avgångar inom 60 minuter
-      </div>
+      <div className="text-[14px] text-neutral-500 dark:text-neutral-400 mb-1">Inga avgångar inom 60 minuter</div>
       {lastUpdated && (
-        <div className="text-label-sm text-neutral-400 dark:text-neutral-600">
-          Uppdaterad {lastUpdated}
-        </div>
+        <div className="text-label-sm text-neutral-400 dark:text-neutral-600">Uppdaterad {lastUpdated}</div>
       )}
     </div>
   )
 }
 
-// ── Destination modal ─────────────────────────────────────────────────────────
+// ── Bottom sheets ─────────────────────────────────────────────────────────────
 
-function DestinationModal({
-  stopName,
-  groups,
-  onFilter,
-  onDismiss,
-}: {
+function SheetWrap({ zIndex = 'z-30', onClose, children }: {
+  zIndex?: string; onClose: () => void; children: React.ReactNode
+}) {
+  return (
+    <div className={`absolute inset-0 ${zIndex} flex flex-col`} aria-modal="true" role="dialog">
+      <button onClick={onClose} aria-label="Stäng" className="flex-1 bg-black/30 dark:bg-black/50 backdrop-blur-[2px]" />
+      <div
+        className="bg-white dark:bg-neutral-950 rounded-t-[18px] border-t border-neutral-200 dark:border-neutral-800 px-5 pt-3"
+        style={{ animation: 'slide-up 240ms cubic-bezier(0.32,0.72,0,1)', paddingBottom: 'max(env(safe-area-inset-bottom),1.5rem)' }}
+      >
+        <div className="w-9 h-1 bg-neutral-300 dark:bg-neutral-700 rounded-full mx-auto mb-5 opacity-60" />
+        {children}
+      </div>
+    </div>
+  )
+}
+
+function NameInput({ value, onChange, placeholder, onEnter }: {
+  value: string; onChange: (v: string) => void; placeholder: string; onEnter: () => void
+}) {
+  const ref = useRef<HTMLInputElement>(null)
+  useEffect(() => { const t = setTimeout(() => ref.current?.focus(), 120); return () => clearTimeout(t) }, [])
+  return (
+    <div className="flex items-center gap-2.5 px-3.5 h-[48px] border border-neutral-200 dark:border-neutral-800 rounded-lg focus-within:border-neutral-950 dark:focus-within:border-neutral-50 mb-3 transition-colors">
+      <input ref={ref} type="text" value={value} onChange={e => onChange(e.target.value)}
+        onKeyDown={e => e.key === 'Enter' && onEnter()} placeholder={placeholder}
+        className="flex-1 bg-transparent font-mono text-[13px] outline-none placeholder:text-neutral-400 dark:placeholder:text-neutral-600 text-neutral-950 dark:text-neutral-50" />
+    </div>
+  )
+}
+
+function PrimaryBtn({ label, disabled, onClick }: { label: string; disabled?: boolean; onClick: () => void }) {
+  return (
+    <button onClick={onClick} disabled={disabled}
+      className="w-full h-[46px] bg-neutral-950 dark:bg-neutral-50 text-neutral-50 dark:text-neutral-950 rounded-lg font-mono text-[13px] font-medium disabled:opacity-25 active:opacity-75 transition-opacity mb-1">
+      {label}
+    </button>
+  )
+}
+
+function GhostBtn({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button onClick={onClick} className="w-full py-3.5 text-[13px] text-neutral-500 dark:text-neutral-400 active:opacity-50">
+      {label}
+    </button>
+  )
+}
+
+// Save a destination filter with a name ("Till jobbet")
+function SaveDestinationSheet({ filter, onSave, onClose }: {
+  filter: string; onSave: (label: string) => void; onClose: () => void
+}) {
+  const [name, setName] = useState('')
+  return (
+    <SheetWrap zIndex="z-40" onClose={onClose}>
+      <div className="text-label text-neutral-500 dark:text-neutral-400 mb-0.5">Spara destination</div>
+      <div className="text-[13px] font-mono text-neutral-500 dark:text-neutral-400 mb-4">
+        Filter: <span className="text-neutral-950 dark:text-neutral-50 font-semibold">"{filter}"</span>
+      </div>
+      <NameInput value={name} onChange={setName} placeholder="Till jobbet, Hem, Mamma…" onEnter={() => name.trim() && onSave(name.trim())} />
+      <PrimaryBtn label="Spara" disabled={!name.trim()} onClick={() => name.trim() && onSave(name.trim())} />
+      <GhostBtn label="Avbryt" onClick={onClose} />
+    </SheetWrap>
+  )
+}
+
+// Save the current stop — optionally with the active direction filter
+function SaveStopSheet({ stopName, filter, onSave, onClose }: {
+  stopName: string; filter: string; onSave: (withFilter: boolean) => void; onClose: () => void
+}) {
+  return (
+    <SheetWrap zIndex="z-40" onClose={onClose}>
+      <div className="text-label text-neutral-500 dark:text-neutral-400 mb-1">Spara hållplats</div>
+      <h2 className="text-[18px] font-semibold tracking-tight mb-5 text-neutral-950 dark:text-neutral-50">{stopName}</h2>
+
+      <button
+        onClick={() => onSave(false)}
+        className="w-full flex items-center justify-between px-4 py-3.5 border border-neutral-200 dark:border-neutral-800 rounded-lg mb-2.5 active:bg-black/[0.04] dark:active:bg-white/[0.05]"
+      >
+        <div className="text-left">
+          <div className="text-[14px] font-medium text-neutral-950 dark:text-neutral-50">{stopName}</div>
+          <div className="font-mono text-[11px] text-neutral-500 dark:text-neutral-400 mt-0.5">Alla riktningar</div>
+        </div>
+        <span className="font-mono text-[11px] text-neutral-400 dark:text-neutral-600">→</span>
+      </button>
+
+      <button
+        onClick={() => onSave(true)}
+        className="w-full flex items-center justify-between px-4 py-3.5 border border-neutral-200 dark:border-neutral-800 rounded-lg mb-4 active:bg-black/[0.04] dark:active:bg-white/[0.05]"
+      >
+        <div className="text-left">
+          <div className="text-[14px] font-medium text-neutral-950 dark:text-neutral-50">{stopName} → {filter}</div>
+          <div className="font-mono text-[11px] text-neutral-500 dark:text-neutral-400 mt-0.5">Endast denna riktning</div>
+        </div>
+        <span className="font-mono text-[11px] text-neutral-400 dark:text-neutral-600">→</span>
+      </button>
+
+      <GhostBtn label="Avbryt" onClick={onClose} />
+    </SheetWrap>
+  )
+}
+
+// ── Destination modal (complex stop auto-popup) ───────────────────────────────
+
+function DestinationModal({ stopName, destinations, onFilter, onDismiss }: {
   stopName: string
-  groups: TravelGroup[]
+  destinations: (Favorite & { filter: string })[]
   onFilter: (query: string) => void
   onDismiss: () => void
 }) {
   const [value, setValue] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
-
-  useEffect(() => {
-    const t = setTimeout(() => inputRef.current?.focus(), 150)
-    return () => clearTimeout(t)
-  }, [])
+  useEffect(() => { const t = setTimeout(() => inputRef.current?.focus(), 150); return () => clearTimeout(t) }, [])
 
   function submit() {
     if (value.trim()) onFilter(value.trim())
@@ -461,31 +529,20 @@ function DestinationModal({
 
   return (
     <div className="absolute inset-0 z-30 flex flex-col" aria-modal="true" role="dialog">
-      <button
-        onClick={onDismiss}
-        aria-label="Visa alla avgångar"
-        className="flex-1 bg-black/30 dark:bg-black/50 backdrop-blur-[2px]"
-      />
-      <div
-        className="bg-white dark:bg-neutral-950 rounded-t-[18px] border-t border-neutral-200 dark:border-neutral-800 px-5 pt-3"
-        style={{ animation: 'slide-up 260ms cubic-bezier(0.32, 0.72, 0, 1)', paddingBottom: 'max(env(safe-area-inset-bottom), 1.5rem)' }}
-      >
+      <button onClick={onDismiss} aria-label="Visa alla avgångar"
+        className="flex-1 bg-black/30 dark:bg-black/50 backdrop-blur-[2px]" />
+      <div className="bg-white dark:bg-neutral-950 rounded-t-[18px] border-t border-neutral-200 dark:border-neutral-800 px-5 pt-3"
+        style={{ animation: 'slide-up 260ms cubic-bezier(0.32,0.72,0,1)', paddingBottom: 'max(env(safe-area-inset-bottom),1.5rem)' }}>
         <div className="w-9 h-1 bg-neutral-300 dark:bg-neutral-700 rounded-full mx-auto mb-5 opacity-60" />
-
         <div className="text-label text-neutral-500 dark:text-neutral-400 mb-0.5">{stopName}</div>
-        <h2 className="text-[22px] font-semibold tracking-tight mb-4 text-neutral-950 dark:text-neutral-50">
-          Vart ska du?
-        </h2>
+        <h2 className="text-[22px] font-semibold tracking-tight mb-4 text-neutral-950 dark:text-neutral-50">Vart ska du?</h2>
 
-        {groups.length > 0 && (
+        {destinations.length > 0 && (
           <div className="flex gap-2 overflow-x-auto no-scrollbar mb-4 -mx-5 px-5">
-            {groups.map(g => (
-              <button
-                key={g.id}
-                onClick={() => onFilter(g.query)}
-                className="shrink-0 h-8 px-3.5 rounded-full border border-neutral-200 dark:border-neutral-800 font-mono text-[11.5px] font-medium text-neutral-700 dark:text-neutral-300 active:bg-black/[0.04] dark:active:bg-white/[0.05] transition-colors"
-              >
-                {g.name}
+            {destinations.map(d => (
+              <button key={d.id} onClick={() => onFilter(d.filter)}
+                className="shrink-0 h-8 px-3.5 rounded-full border border-neutral-200 dark:border-neutral-800 font-mono text-[11.5px] font-medium text-neutral-700 dark:text-neutral-300 active:bg-black/[0.04] dark:active:bg-white/[0.05] transition-colors">
+                {d.label}
               </button>
             ))}
           </div>
@@ -493,96 +550,14 @@ function DestinationModal({
 
         <div className="flex items-center gap-2.5 px-3.5 h-[48px] border border-neutral-200 dark:border-neutral-800 rounded-lg focus-within:border-neutral-950 dark:focus-within:border-neutral-50 mb-3 transition-colors">
           <SearchIcon size={13} className="text-neutral-400 dark:text-neutral-600 shrink-0" />
-          <input
-            ref={inputRef}
-            type="text"
-            value={value}
-            onChange={e => setValue(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && submit()}
-            placeholder="Destination eller linjenummer…"
-            className="flex-1 bg-transparent font-mono text-[13px] outline-none placeholder:text-neutral-400 dark:placeholder:text-neutral-600 text-neutral-950 dark:text-neutral-50"
-          />
-          {value && (
-            <button onClick={() => setValue('')} className="p-1 -m-1 text-neutral-400 dark:text-neutral-600">
-              <XIcon size={11} />
-            </button>
-          )}
+          <input ref={inputRef} type="text" value={value} onChange={e => setValue(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && submit()} placeholder="Destination eller linjenummer…"
+            className="flex-1 bg-transparent font-mono text-[13px] outline-none placeholder:text-neutral-400 dark:placeholder:text-neutral-600 text-neutral-950 dark:text-neutral-50" />
+          {value && <button onClick={() => setValue('')} className="p-1 -m-1 text-neutral-400 dark:text-neutral-600"><XIcon size={11} /></button>}
         </div>
 
-        <button
-          onClick={submit}
-          disabled={!value.trim()}
-          className="w-full h-[46px] bg-neutral-950 dark:bg-neutral-50 text-neutral-50 dark:text-neutral-950 rounded-lg font-mono text-[13px] font-medium disabled:opacity-25 active:opacity-75 transition-opacity mb-1"
-        >
-          Visa avgångar
-        </button>
-
-        <button
-          onClick={onDismiss}
-          className="w-full py-3.5 text-[13px] text-neutral-500 dark:text-neutral-400 active:opacity-50"
-        >
-          Visa alla avgångar
-        </button>
-      </div>
-    </div>
-  )
-}
-
-// ── Save group sheet ──────────────────────────────────────────────────────────
-
-function SaveGroupSheet({
-  query,
-  onSave,
-  onClose,
-}: {
-  query: string
-  onSave: (name: string) => void
-  onClose: () => void
-}) {
-  const [name, setName] = useState('')
-  const inputRef = useRef<HTMLInputElement>(null)
-
-  useEffect(() => {
-    const t = setTimeout(() => inputRef.current?.focus(), 100)
-    return () => clearTimeout(t)
-  }, [])
-
-  return (
-    <div className="absolute inset-0 z-40 flex flex-col" aria-modal="true" role="dialog">
-      <button onClick={onClose} aria-label="Avbryt" className="flex-1 bg-black/30 dark:bg-black/50 backdrop-blur-[2px]" />
-      <div
-        className="bg-white dark:bg-neutral-950 rounded-t-[18px] border-t border-neutral-200 dark:border-neutral-800 px-5 pt-3"
-        style={{ animation: 'slide-up 220ms cubic-bezier(0.32, 0.72, 0, 1)', paddingBottom: 'max(env(safe-area-inset-bottom), 1.5rem)' }}
-      >
-        <div className="w-9 h-1 bg-neutral-300 dark:bg-neutral-700 rounded-full mx-auto mb-5 opacity-60" />
-
-        <div className="text-label text-neutral-500 dark:text-neutral-400 mb-0.5">Spara som grupp</div>
-        <div className="text-[13px] font-mono text-neutral-500 dark:text-neutral-400 mb-4">
-          Filter: <span className="text-neutral-950 dark:text-neutral-50 font-semibold">"{query}"</span>
-        </div>
-
-        <div className="flex items-center gap-2.5 px-3.5 h-[48px] border border-neutral-200 dark:border-neutral-800 rounded-lg focus-within:border-neutral-950 dark:focus-within:border-neutral-50 mb-3 transition-colors">
-          <input
-            ref={inputRef}
-            type="text"
-            value={name}
-            onChange={e => setName(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && name.trim() && onSave(name.trim())}
-            placeholder="Till jobbet, Hem, Mamma…"
-            className="flex-1 bg-transparent font-mono text-[13px] outline-none placeholder:text-neutral-400 dark:placeholder:text-neutral-600 text-neutral-950 dark:text-neutral-50"
-          />
-        </div>
-
-        <button
-          onClick={() => name.trim() && onSave(name.trim())}
-          disabled={!name.trim()}
-          className="w-full h-[46px] bg-neutral-950 dark:bg-neutral-50 text-neutral-50 dark:text-neutral-950 rounded-lg font-mono text-[13px] font-medium disabled:opacity-25 active:opacity-75 transition-opacity mb-1"
-        >
-          Spara grupp
-        </button>
-        <button onClick={onClose} className="w-full py-3.5 text-[13px] text-neutral-500 dark:text-neutral-400 active:opacity-50">
-          Avbryt
-        </button>
+        <PrimaryBtn label="Visa avgångar" disabled={!value.trim()} onClick={submit} />
+        <GhostBtn label="Visa alla avgångar" onClick={onDismiss} />
       </div>
     </div>
   )

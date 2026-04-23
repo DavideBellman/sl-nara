@@ -1,23 +1,25 @@
 import type { ReactNode } from 'react'
 import { StarFilledIcon, StarIcon, XIcon, SunIcon, MoonIcon, MonitorIcon } from './icons'
-import type { FavoriteSite, Site, TravelGroup } from '../types'
+import type { Favorite, Site } from '../types'
 import type { Coords } from '../lib/geo'
 import { haversineKm } from '../lib/geo'
 import type { Theme } from '../hooks/useTheme'
 
 interface FavoritesTabProps {
-  favorites: FavoriteSite[]
+  favorites: Favorite[]
   sites: Site[]
   userCoords: Coords | null
-  onSelect: (stop: { id: number; name: string }) => void
-  groups: TravelGroup[]
-  onDeleteGroup: (id: string) => void
+  onSelectStop: (stopId: number, stopName: string, filter?: string) => void
+  onApplyDestination: (filter: string) => void
+  onRemoveFavorite: (id: string) => void
   theme: Theme
   onThemeChange: (t: Theme) => void
 }
 
-export function FavoritesTab({ favorites, sites, userCoords, onSelect, groups, onDeleteGroup, theme, onThemeChange }: FavoritesTabProps) {
-  const isEmpty = favorites.length === 0 && groups.length === 0
+export function FavoritesTab({ favorites, sites, userCoords, onSelectStop, onApplyDestination, onRemoveFavorite, theme, onThemeChange }: FavoritesTabProps) {
+  const stopFavs = favorites.filter(f => f.type === 'stop')
+  const destFavs = favorites.filter(f => f.type === 'destination')
+  const isEmpty = favorites.length === 0
 
   if (isEmpty) {
     return (
@@ -40,9 +42,9 @@ export function FavoritesTab({ favorites, sites, userCoords, onSelect, groups, o
   }
 
   return (
-    <div className="h-full flex flex-col bg-white dark:bg-neutral-950 text-neutral-950 dark:text-neutral-50 overflow-y-auto">
+    <div className="h-full flex flex-col bg-white dark:bg-neutral-950 text-neutral-950 dark:text-neutral-50">
       <header
-        className="px-5 pb-4 border-b border-neutral-200 dark:border-neutral-800"
+        className="px-5 pb-4 border-b border-neutral-200 dark:border-neutral-800 shrink-0"
         style={{ paddingTop: 'max(env(safe-area-inset-top), 1.5rem)' }}
       >
         <span
@@ -56,45 +58,13 @@ export function FavoritesTab({ favorites, sites, userCoords, onSelect, groups, o
         </h1>
       </header>
 
-      <div className="flex-1">
+      <div className="flex-1 overflow-y-auto">
 
-        {groups.length > 0 && (
+        {stopFavs.length > 0 && (
           <>
-            <div className="flex items-center gap-2.5 px-5 pt-4 pb-2.5">
-              <span className="text-label text-neutral-500 dark:text-neutral-400 shrink-0">Mina resor</span>
-              <div className="flex-1 h-px bg-neutral-200 dark:bg-neutral-800" />
-            </div>
-            {groups.map(g => (
-              <div
-                key={g.id}
-                className="flex items-center px-5 py-3.5 border-b border-neutral-200 dark:border-neutral-800"
-              >
-                <div className="flex-1 min-w-0">
-                  <div className="text-[15px] font-medium">{g.name}</div>
-                  <div className="font-mono text-[11px] text-neutral-500 dark:text-neutral-400 mt-0.5 truncate">
-                    → {g.query}
-                  </div>
-                </div>
-                <button
-                  onClick={() => onDeleteGroup(g.id)}
-                  aria-label={`Ta bort ${g.name}`}
-                  className="ml-4 p-2 -m-1 text-neutral-400 dark:text-neutral-600 active:opacity-50"
-                >
-                  <XIcon size={12} />
-                </button>
-              </div>
-            ))}
-          </>
-        )}
-
-        {favorites.length > 0 && (
-          <>
-            <div className="flex items-center gap-2.5 px-5 pt-4 pb-2.5">
-              <span className="text-label text-neutral-500 dark:text-neutral-400 shrink-0">Hållplatser</span>
-              <div className="flex-1 h-px bg-neutral-200 dark:bg-neutral-800" />
-            </div>
-            {favorites.map(fav => {
-              const site = sites.find(s => s.id === fav.id)
+            <SectionHeader label="Hållplatser" />
+            {stopFavs.map(fav => {
+              const site = sites.find(s => s.id === fav.stopId)
               const distKm = userCoords && site
                 ? haversineKm(userCoords, { lat: site.lat, lon: site.lon })
                 : null
@@ -103,26 +73,77 @@ export function FavoritesTab({ favorites, sites, userCoords, onSelect, groups, o
                 : `${distKm.toFixed(1)} km`
 
               return (
-                <button
+                <div
                   key={fav.id}
-                  onClick={() => onSelect({ id: fav.id, name: fav.name })}
-                  className="w-full flex items-center justify-between px-5 py-4 border-b border-neutral-200 dark:border-neutral-800 text-left active:bg-black/[0.028] dark:active:bg-white/[0.035] transition-colors"
+                  className="flex items-center px-5 border-b border-neutral-200 dark:border-neutral-800"
                 >
-                  <div className="flex items-center gap-3 min-w-0">
+                  <button
+                    onClick={() => onSelectStop(fav.stopId!, fav.stopName!, fav.filter)}
+                    className="flex-1 flex items-center gap-3 py-4 text-left min-w-0 active:opacity-60 transition-opacity"
+                  >
                     <StarFilledIcon size={12} className="text-neutral-400 dark:text-neutral-600 shrink-0" />
-                    <span className="text-[15px] font-medium truncate">{fav.name}</span>
-                  </div>
-                  <span className="font-mono text-[11px] text-neutral-500 dark:text-neutral-400 shrink-0 ml-3">
-                    {distLabel ?? '→'}
-                  </span>
-                </button>
+                    <div className="min-w-0">
+                      <div className="text-[15px] font-medium truncate">{fav.label}</div>
+                      {distLabel && (
+                        <div className="font-mono text-[11px] text-neutral-500 dark:text-neutral-400 mt-0.5">
+                          {distLabel}
+                        </div>
+                      )}
+                    </div>
+                  </button>
+                  <button
+                    onClick={() => onRemoveFavorite(fav.id)}
+                    aria-label={`Ta bort ${fav.label}`}
+                    className="ml-3 p-2 text-neutral-400 dark:text-neutral-600 active:opacity-50"
+                  >
+                    <XIcon size={12} />
+                  </button>
+                </div>
               )
             })}
+          </>
+        )}
+
+        {destFavs.length > 0 && (
+          <>
+            <SectionHeader label="Destinationer" />
+            {destFavs.map(fav => (
+              <div
+                key={fav.id}
+                className="flex items-center px-5 border-b border-neutral-200 dark:border-neutral-800"
+              >
+                <button
+                  onClick={() => onApplyDestination(fav.filter!)}
+                  className="flex-1 flex flex-col py-3.5 text-left min-w-0 active:opacity-60 transition-opacity"
+                >
+                  <div className="text-[15px] font-medium truncate">{fav.label}</div>
+                  <div className="font-mono text-[11px] text-neutral-500 dark:text-neutral-400 mt-0.5 truncate">
+                    → {fav.filter}
+                  </div>
+                </button>
+                <button
+                  onClick={() => onRemoveFavorite(fav.id)}
+                  aria-label={`Ta bort ${fav.label}`}
+                  className="ml-3 p-2 text-neutral-400 dark:text-neutral-600 active:opacity-50"
+                >
+                  <XIcon size={12} />
+                </button>
+              </div>
+            ))}
           </>
         )}
       </div>
 
       <ThemeToggle theme={theme} onChange={onThemeChange} />
+    </div>
+  )
+}
+
+function SectionHeader({ label }: { label: string }) {
+  return (
+    <div className="flex items-center gap-2.5 px-5 pt-4 pb-2.5">
+      <span className="text-label text-neutral-500 dark:text-neutral-400 shrink-0">{label}</span>
+      <div className="flex-1 h-px bg-neutral-200 dark:bg-neutral-800" />
     </div>
   )
 }
@@ -135,7 +156,7 @@ function ThemeToggle({ theme, onChange }: { theme: Theme; onChange: (t: Theme) =
   ]
 
   return (
-    <div className="px-5 py-4 border-t border-neutral-200 dark:border-neutral-800" style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 1rem)' }}>
+    <div className="px-5 py-4 border-t border-neutral-200 dark:border-neutral-800 shrink-0" style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 1rem)' }}>
       <div className="flex items-center gap-2.5 mb-3">
         <span className="text-label text-neutral-500 dark:text-neutral-400 shrink-0">Tema</span>
         <div className="flex-1 h-px bg-neutral-200 dark:bg-neutral-800" />

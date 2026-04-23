@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import type { Site, FavoriteSite, TravelGroup } from './types'
+import type { Site, FavoriteSite, Favorite } from './types'
 import { fetchSites, fetchDepartures } from './lib/api'
 import { isTooFarFromStockholm, haversineKm } from './lib/geo'
 import { getItem, setItem } from './lib/storage'
@@ -14,15 +14,33 @@ import { FavoritesTab } from './components/FavoritesTab'
 import { PermissionGate } from './components/PermissionGate'
 import { TabBar, type Tab } from './components/TabBar'
 
-const FAVORITES_KEY = 'sl_favorites_v1'
-const GROUPS_KEY = 'sl_groups_v1'
-const MAX_FAVORITES = 5
+const FAVORITES_V2_KEY = 'sl_favorites_v2'
 const MAX_GPS_ATTEMPTS = 5
 
 interface SelectedStop {
   id: number
   name: string
   viaGps: boolean
+}
+
+function migrateToV2(): Favorite[] {
+  const oldStops = getItem<{ id: number; name: string }[]>('sl_favorites_v1') ?? []
+  const oldGroups = getItem<{ id: string; name: string; query: string }[]>('sl_groups_v1') ?? []
+  return [
+    ...oldStops.map(s => ({
+      id: crypto.randomUUID(),
+      type: 'stop' as const,
+      label: s.name,
+      stopId: s.id,
+      stopName: s.name,
+    })),
+    ...oldGroups.map(g => ({
+      id: g.id,
+      type: 'destination' as const,
+      label: g.name,
+      filter: g.query,
+    })),
+  ]
 }
 
 export default function App() {
@@ -32,14 +50,18 @@ export default function App() {
   const [selectedStop, setSelectedStop] = useState<SelectedStop | null>(null)
   const [isSearchOpen, setIsSearchOpen] = useState(false)
   const { theme, setTheme } = useTheme()
-  const [favorites, setFavorites] = useState<FavoriteSite[]>(() => getItem<FavoriteSite[]>(FAVORITES_KEY) ?? [])
-  const [groups, setGroups] = useState<TravelGroup[]>(() => getItem<TravelGroup[]>(GROUPS_KEY) ?? [])
+  const [favorites, setFavorites] = useState<Favorite[]>(() => {
+    const v2 = getItem<Favorite[]>(FAVORITES_V2_KEY)
+    if (v2) return v2
+    const migrated = migrateToV2()
+    if (migrated.length > 0) setItem(FAVORITES_V2_KEY, migrated)
+    return migrated
+  })
+  const [departureFilter, setDepartureFilter] = useState('')
   const [activeTab, setActiveTab] = useState<Tab>('departures')
   const [tabKey, setTabKey] = useState(0)
 
-  // Prevents GPS auto-selection from overriding a manual stop choice
   const manuallySelectedRef = useRef(false)
-  // Keeps activeTab accessible inside passive event listeners without re-binding
   const activeTabRef = useRef<Tab>('departures')
   useEffect(() => { activeTabRef.current = activeTab }, [activeTab])
 
@@ -53,8 +75,6 @@ export default function App() {
       .catch(err => { setSitesError(err instanceof Error ? err.message : 'Okänt fel'); setSitesLoading(false) })
   }, [])
 
-  // Parallel GPS stop selection: fetch departures for the N nearest stops at once and
-  // pick the nearest one with actual service. Avoids sequential skipping on 0-departure sites.
   useEffect(() => {
     if (geo.status !== 'granted' || !geo.coords || nearestTen.length === 0 || sitesLoading) return
     if (isTooFarFromStockholm(geo.coords, sites)) return
@@ -75,20 +95,22 @@ export default function App() {
     ).then(results => {
       if (cancelled || manuallySelectedRef.current) return
       const winner = results.find(r => r.count > 0) ?? results[0]
-      if (winner) setSelectedStop({ id: winner.stop.id, name: winner.stop.name, viaGps: true })
+      if (winner) {
+        setSelectedStop({ id: winner.stop.id, name: winner.stop.name, viaGps: true })
+        setDepartureFilter('')
+      }
     })
 
     return () => { cancelled = true }
   }, [geo.status, geo.coords, nearestTen, sitesLoading, sites])
 
-  // Horizontal swipe to switch tabs — uses passive:false to prevent scroll only when swipe is horizontal
+  // Swipe to switch tabs
   const swipeRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
     const el = swipeRef.current
     if (!el) return
 
-    let startX = 0
-    let startY = 0
+    let startX = 0, startY = 0
     let locked: 'none' | 'horizontal' | 'vertical' = 'none'
 
     function onTouchStart(e: TouchEvent) {
@@ -96,7 +118,6 @@ export default function App() {
       startY = e.touches[0].clientY
       locked = 'none'
     }
-
     function onTouchMove(e: TouchEvent) {
       if (locked === 'vertical') return
       const dx = e.touches[0].clientX - startX
@@ -106,22 +127,17 @@ export default function App() {
       }
       if (locked === 'horizontal') e.preventDefault()
     }
-
     function onTouchEnd(e: TouchEvent) {
       if (locked !== 'horizontal') return
       const dx = e.changedTouches[0].clientX - startX
       const dy = e.changedTouches[0].clientY - startY
       if (Math.abs(dx) < 50 || Math.abs(dy) > Math.abs(dx) * 0.6) return
-
       const tabs: Tab[] = ['departures', 'search', 'favorites']
       const idx = tabs.indexOf(activeTabRef.current)
       let next: Tab | null = null
       if (dx < 0 && idx < tabs.length - 1) next = tabs[idx + 1]
       else if (dx > 0 && idx > 0) next = tabs[idx - 1]
-      if (next) {
-        setActiveTab(next)
-        setTabKey(k => k + 1)
-      }
+      if (next) { setActiveTab(next); setTabKey(k => k + 1) }
     }
 
     el.addEventListener('touchstart', onTouchStart, { passive: true })
@@ -139,42 +155,78 @@ export default function App() {
     setTabKey(k => k + 1)
   }, [])
 
+  // ── Stop selection ──────────────────────────────────────────────────────────
+
   const handleStopSelect = useCallback((stop: { id: number; name: string }) => {
     manuallySelectedRef.current = true
     setSelectedStop({ id: stop.id, name: stop.name, viaGps: false })
+    setDepartureFilter('')
     setIsSearchOpen(false)
     switchTab('departures')
   }, [switchTab])
 
-  const saveGroup = useCallback((name: string, query: string) => {
-    setGroups(prev => {
-      const next = [...prev, { id: crypto.randomUUID(), name, query }]
-      setItem(GROUPS_KEY, next)
-      return next
-    })
+  const handleSelectFavoriteStop = useCallback((stopId: number, stopName: string, filter?: string) => {
+    manuallySelectedRef.current = true
+    setSelectedStop({ id: stopId, name: stopName, viaGps: false })
+    setDepartureFilter(filter ?? '')
+    switchTab('departures')
+  }, [switchTab])
+
+  const handleApplyDestination = useCallback((filter: string) => {
+    setDepartureFilter(filter)
+    switchTab('departures')
+  }, [switchTab])
+
+  // ── Favorites management ────────────────────────────────────────────────────
+
+  const saveFavorites = useCallback((next: Favorite[]) => {
+    setFavorites(next)
+    setItem(FAVORITES_V2_KEY, next)
   }, [])
 
-  const deleteGroup = useCallback((id: string) => {
-    setGroups(prev => {
-      const next = prev.filter(g => g.id !== id)
-      setItem(GROUPS_KEY, next)
-      return next
-    })
-  }, [])
-
-  const toggleFavorite = useCallback(() => {
-    if (!selectedStop) return
+  const addStopFavorite = useCallback((stopId: number, stopName: string, filter?: string) => {
+    const label = filter ? `${stopName} → ${filter}` : stopName
     setFavorites(prev => {
-      const exists = prev.some(f => f.id === selectedStop.id)
-      const next: FavoriteSite[] = exists
-        ? prev.filter(f => f.id !== selectedStop.id)
-        : prev.length >= MAX_FAVORITES ? prev : [...prev, { id: selectedStop.id, name: selectedStop.name }]
-      setItem(FAVORITES_KEY, next)
+      const next = [...prev, { id: crypto.randomUUID(), type: 'stop' as const, label, stopId, stopName, filter }]
+      setItem(FAVORITES_V2_KEY, next)
       return next
     })
-  }, [selectedStop])
+  }, [])
 
-  const isFavorite = selectedStop ? favorites.some(f => f.id === selectedStop.id) : false
+  const removeStopFavorites = useCallback((stopId: number) => {
+    setFavorites(prev => {
+      const next = prev.filter(f => !(f.type === 'stop' && f.stopId === stopId))
+      setItem(FAVORITES_V2_KEY, next)
+      return next
+    })
+  }, [])
+
+  const addDestination = useCallback((label: string, filter: string) => {
+    setFavorites(prev => {
+      const next = [...prev, { id: crypto.randomUUID(), type: 'destination' as const, label, filter }]
+      setItem(FAVORITES_V2_KEY, next)
+      return next
+    })
+  }, [])
+
+  const removeFavorite = useCallback((id: string) => {
+    setFavorites(prev => {
+      const next = prev.filter(f => f.id !== id)
+      setItem(FAVORITES_V2_KEY, next)
+      return next
+    })
+  }, [saveFavorites])
+
+  const isFavoriteStop = selectedStop
+    ? favorites.some(f => f.type === 'stop' && f.stopId === selectedStop.id)
+    : false
+
+  // Derived stop list for SearchSheet / SearchHome
+  const stopFavs: FavoriteSite[] = favorites
+    .filter(f => f.type === 'stop')
+    .map(f => ({ id: f.stopId!, name: f.stopName! }))
+
+  // ── Misc ────────────────────────────────────────────────────────────────────
 
   const selectedSite = sites.find(s => s.id === selectedStop?.id)
   const distKm = geo.coords && selectedSite
@@ -198,29 +250,21 @@ export default function App() {
 
   return (
     <div className="flex flex-col h-svh bg-white dark:bg-neutral-950">
-      {/* Search sheet — overlays everything */}
       {isSearchOpen && (
         <SearchSheet
           sites={sites}
           userCoords={geo.coords}
           nearestTen={nearestTen}
-          favorites={favorites}
+          favorites={stopFavs}
           onSelect={handleStopSelect}
           onClose={() => setIsSearchOpen(false)}
-          onFavoriteSelect={stop => {
-            manuallySelectedRef.current = true
-            setSelectedStop({ id: stop.id, name: stop.name, viaGps: false })
-            setIsSearchOpen(false)
-            switchTab('departures')
-          }}
+          onFavoriteSelect={stop => handleStopSelect({ id: stop.id, name: stop.name })}
         />
       )}
 
-      {/* Tab content — swipe-enabled */}
       <div ref={swipeRef} className="flex-1 overflow-hidden">
         <div key={tabKey} className="h-full animate-tab-in">
 
-          {/* ── DEPARTURES TAB ── */}
           {activeTab === 'departures' && (
             <>
               {isInitialLoading && !showPermissionGate && (
@@ -244,16 +288,19 @@ export default function App() {
                 <DeparturesView
                   stop={{ id: selectedStop.id, name: selectedStop.name, viaGps: selectedStop.viaGps }}
                   distanceLabel={distLabel}
-                  isFavorite={isFavorite}
+                  isFavorite={isFavoriteStop}
                   departures={departures}
                   loading={loading}
                   error={error}
                   lastUpdated={lastUpdated}
                   isOffline={isOffline}
                   onRefresh={refresh}
-                  onToggleFavorite={toggleFavorite}
-                  groups={groups}
-                  onSaveGroup={saveGroup}
+                  onAddStopFavorite={(filter) => addStopFavorite(selectedStop.id, selectedStop.name, filter)}
+                  onRemoveStopFavorite={() => removeStopFavorites(selectedStop.id)}
+                  favorites={favorites}
+                  onAddDestination={addDestination}
+                  filter={departureFilter}
+                  onFilterChange={setDepartureFilter}
                 />
               )}
 
@@ -265,25 +312,23 @@ export default function App() {
             </>
           )}
 
-          {/* ── FAVORITES TAB ── */}
           {activeTab === 'favorites' && (
             <FavoritesTab
               favorites={favorites}
               sites={sites}
               userCoords={geo.coords}
-              onSelect={handleStopSelect}
-              groups={groups}
-              onDeleteGroup={deleteGroup}
+              onSelectStop={handleSelectFavoriteStop}
+              onApplyDestination={handleApplyDestination}
+              onRemoveFavorite={removeFavorite}
               theme={theme}
               onThemeChange={setTheme}
             />
           )}
 
-          {/* ── SEARCH TAB ── */}
           {activeTab === 'search' && (
             <SearchHome
               sites={sites}
-              favorites={favorites}
+              favorites={stopFavs}
               onSelect={handleStopSelect}
               onFavoriteSelect={stop => handleStopSelect({ id: stop.id, name: stop.name })}
             />
@@ -291,7 +336,6 @@ export default function App() {
         </div>
       </div>
 
-      {/* Tab bar */}
       <TabBar activeTab={activeTab} onTabChange={switchTab} />
     </div>
   )

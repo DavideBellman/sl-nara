@@ -68,8 +68,11 @@ export interface FavoriteSite {
   name: string
 }
 
-export interface TravelGroup {
+export interface Favorite {
   id: string
-  name: string
-  query: string
+  type: 'stop' | 'destination'
+  label: string
+  stopId?: number
+  stopName?: string
+  filter?: string
 }
