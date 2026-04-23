@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
 import type { Departure, TransportMode, Favorite, Site } from '../types'
 import { getTransportColor } from '../lib/format'
-import { StarIcon, StarFilledIcon, MapPinIcon, RefreshIcon, WarningIcon, SearchIcon, XIcon } from './icons'
+import { fetchDepartures } from '../lib/api'
+import { StarIcon, StarFilledIcon, MapPinIcon, RefreshIcon, WarningIcon, SearchIcon, XIcon, ChevronLeftIcon } from './icons'
 import { DepartureDetail } from './DepartureDetail'
 import { useDarkMode } from '../hooks/useDarkMode'
 
@@ -273,9 +274,11 @@ export function DeparturesView({
         <DestinationModal
           stopName={stop.name}
           sites={sites}
+          currentDepartures={departures}
           destinations={destinations}
           onFilter={q => { onFilterChange(q); setDestinationModalSeen(true) }}
           onDismiss={() => setDestinationModalSeen(true)}
+          isDark={isDark}
         />
       )}
 
@@ -514,37 +517,140 @@ function SaveStopSheet({ stopName, filter, onSave, onClose }: {
 
 // ── Destination modal (complex stop auto-popup) ───────────────────────────────
 
-function DestinationModal({ stopName, sites, destinations, onFilter, onDismiss }: {
+type JourneyPhase =
+  | { type: 'search' }
+  | { type: 'loading'; destName: string }
+  | { type: 'results'; destName: string; matches: Departure[] }
+
+function DestinationModal({ stopName, sites, currentDepartures, destinations, onFilter, onDismiss, isDark }: {
   stopName: string
   sites: Site[]
+  currentDepartures: Departure[]
   destinations: (Favorite & { filter: string })[]
   onFilter: (query: string) => void
   onDismiss: () => void
+  isDark: boolean
 }) {
   const [value, setValue] = useState('')
+  const [phase, setPhase] = useState<JourneyPhase>({ type: 'search' })
   const inputRef = useRef<HTMLInputElement>(null)
   useEffect(() => { const t = setTimeout(() => inputRef.current?.focus(), 150); return () => clearTimeout(t) }, [])
 
   const trimmed = value.trim().toLowerCase()
-
   const suggestions = trimmed
     ? sites.filter(s => s.name.toLowerCase().includes(trimmed)).slice(0, 12).map(s => s.name)
     : []
 
-  return (
-    <div className="absolute inset-0 z-30 flex flex-col" aria-modal="true" role="dialog">
-      <button onClick={onDismiss} aria-label="Visa alla avgångar"
-        className="flex-1 bg-black/30 dark:bg-black/50 backdrop-blur-[2px]" />
-      <div className="bg-white dark:bg-neutral-950 rounded-t-[18px] border-t border-neutral-200 dark:border-neutral-800 px-5 pt-3"
-        style={{ animation: 'slide-up 260ms cubic-bezier(0.32,0.72,0,1)', paddingBottom: 'max(env(safe-area-inset-bottom),1.5rem)' }}>
-        <div className="w-9 h-1 bg-neutral-300 dark:bg-neutral-700 rounded-full mx-auto mb-5 opacity-60" />
+  async function planJourney(destName: string) {
+    const destSite = sites.find(s => s.name.toLowerCase() === destName.toLowerCase())
+    if (!destSite) { onFilter(destName); return }
+
+    setPhase({ type: 'loading', destName })
+    try {
+      const destDeps = await fetchDepartures(destSite.id)
+      const destKeys = new Set(destDeps.map(d => `${d.line.id}-${d.direction_code}`))
+      const matches = currentDepartures.filter(d => destKeys.has(`${d.line.id}-${d.direction_code}`))
+      setPhase({ type: 'results', destName, matches })
+    } catch {
+      onFilter(destName)
+    }
+  }
+
+  const sheetContent = (() => {
+    if (phase.type === 'loading') {
+      return (
+        <>
+          <div className="text-label text-neutral-500 dark:text-neutral-400 mb-0.5">{stopName}</div>
+          <h2 className="text-[22px] font-semibold tracking-tight mb-6 text-neutral-950 dark:text-neutral-50">
+            Till {phase.destName}
+          </h2>
+          <div className="flex items-center justify-center py-8 gap-3 text-neutral-400 dark:text-neutral-600">
+            <div className="w-4 h-4 border-2 border-neutral-200 dark:border-neutral-800 border-t-neutral-400 rounded-full animate-spin" />
+            <span className="font-mono text-[12px]">Söker avgångar…</span>
+          </div>
+        </>
+      )
+    }
+
+    if (phase.type === 'results') {
+      const { destName, matches } = phase
+      return (
+        <>
+          <div className="flex items-center gap-2 mb-4">
+            <button
+              onClick={() => setPhase({ type: 'search' })}
+              className="p-1 -ml-1 text-neutral-500 dark:text-neutral-400 active:opacity-50"
+            >
+              <ChevronLeftIcon size={16} />
+            </button>
+            <div className="min-w-0">
+              <div className="text-label text-neutral-500 dark:text-neutral-400">{stopName} →</div>
+              <div className="text-[18px] font-semibold tracking-tight text-neutral-950 dark:text-neutral-50 truncate">{destName}</div>
+            </div>
+          </div>
+
+          {matches.length === 0 ? (
+            <div className="py-6 text-center">
+              <div className="text-[14px] text-neutral-500 dark:text-neutral-400 mb-3">
+                Ingen direktförbindelse hittad
+              </div>
+              <button
+                onClick={() => onFilter(destName)}
+                className="font-mono text-[12px] text-neutral-400 dark:text-neutral-600 underline underline-offset-2"
+              >
+                Filtrera på stationsnamn istället
+              </button>
+            </div>
+          ) : (
+            <div className="border border-neutral-200 dark:border-neutral-800 rounded-lg overflow-hidden mb-3">
+              {matches.map((dep, i) => {
+                const lightColor = getTransportColor(dep.line.transport_mode, dep.line.group_of_lines)
+                const barColor = isDark ? (DARK_COLORS[lightColor] ?? lightColor) : lightColor
+                const designation = formatDesignation(dep.stop_point.designation, dep.stop_area?.type)
+                const isCancelled = dep.state === 'CANCELLED'
+                return (
+                  <div
+                    key={`${dep.line.designation}-${dep.scheduled}-${i}`}
+                    className="flex items-center gap-3 px-4 py-3 border-b border-neutral-200 dark:border-neutral-800 last:border-0"
+                  >
+                    <div className={['font-mono text-[28px] font-bold leading-none tracking-tight tabular w-16 shrink-0',
+                      isCancelled ? 'line-through text-neutral-400 dark:text-neutral-600' : 'text-neutral-950 dark:text-neutral-50'].join(' ')}>
+                      {dep.display}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <span className="w-0.5 h-3 rounded-[1px] shrink-0" style={{ background: barColor }} />
+                        <span className="font-mono text-[12px] font-bold text-neutral-950 dark:text-neutral-50">{dep.line.designation}</span>
+                        <span className="text-[11px] text-neutral-400 dark:text-neutral-600" aria-hidden>→</span>
+                        <span className="text-[12px] font-medium text-neutral-700 dark:text-neutral-300 truncate">{dep.destination}</span>
+                      </div>
+                      {designation && (
+                        <div className="font-mono text-[10px] text-neutral-500 dark:text-neutral-400 mt-0.5">{designation}</div>
+                      )}
+                    </div>
+                    {isCancelled && (
+                      <span className="font-mono text-[9px] font-semibold tracking-wider uppercase text-red-600 dark:text-red-500 shrink-0">Inställd</span>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+          <GhostBtn label="Visa alla avgångar" onClick={onDismiss} />
+        </>
+      )
+    }
+
+    // search phase
+    return (
+      <>
         <div className="text-label text-neutral-500 dark:text-neutral-400 mb-0.5">{stopName}</div>
         <h2 className="text-[22px] font-semibold tracking-tight mb-4 text-neutral-950 dark:text-neutral-50">Vart ska du?</h2>
 
         {destinations.length > 0 && !trimmed && (
           <div className="flex gap-2 overflow-x-auto no-scrollbar mb-4 -mx-5 px-5">
             {destinations.map(d => (
-              <button key={d.id} onClick={() => onFilter(d.filter)}
+              <button key={d.id} onClick={() => planJourney(d.filter)}
                 className="shrink-0 h-8 px-3.5 rounded-full border border-neutral-200 dark:border-neutral-800 font-mono text-[11.5px] font-medium text-neutral-700 dark:text-neutral-300 active:bg-black/[0.04] dark:active:bg-white/[0.05] transition-colors">
                 {d.label}
               </button>
@@ -555,30 +661,44 @@ function DestinationModal({ stopName, sites, destinations, onFilter, onDismiss }
         <div className="flex items-center gap-2.5 px-3.5 h-[48px] border border-neutral-200 dark:border-neutral-800 rounded-lg focus-within:border-neutral-950 dark:focus-within:border-neutral-50 mb-3 transition-colors">
           <SearchIcon size={13} className="text-neutral-400 dark:text-neutral-600 shrink-0" />
           <input ref={inputRef} type="text" value={value} onChange={e => setValue(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter' && suggestions.length === 1) onFilter(suggestions[0]); else if (e.key === 'Enter' && trimmed) onFilter(value.trim()) }}
-            placeholder="Destination eller linjenummer…"
+            onKeyDown={e => {
+              if (e.key === 'Enter') {
+                if (suggestions.length === 1) planJourney(suggestions[0])
+                else if (trimmed) planJourney(value.trim())
+              }
+            }}
+            placeholder="Sök station…"
             className="flex-1 bg-transparent font-mono text-[13px] outline-none placeholder:text-neutral-400 dark:placeholder:text-neutral-600 text-neutral-950 dark:text-neutral-50" />
           {value && <button onClick={() => setValue('')} className="p-1 -m-1 text-neutral-400 dark:text-neutral-600"><XIcon size={11} /></button>}
         </div>
 
         {suggestions.length > 0 ? (
           <div className="mb-3 border border-neutral-200 dark:border-neutral-800 rounded-lg overflow-hidden max-h-52 overflow-y-auto">
-            {suggestions.map(dest => (
+            {suggestions.map(name => (
               <button
-                key={dest}
-                onClick={() => onFilter(dest)}
+                key={name}
+                onClick={() => planJourney(name)}
                 className="w-full px-4 py-3 text-left text-[14px] font-medium border-b border-neutral-200 dark:border-neutral-800 last:border-0 active:bg-black/[0.04] dark:active:bg-white/[0.05] text-neutral-950 dark:text-neutral-50"
               >
-                {dest}
+                {name}
               </button>
             ))}
           </div>
         ) : (
-          <>
-            <PrimaryBtn label="Visa avgångar" disabled={!trimmed} onClick={() => trimmed && onFilter(value.trim())} />
-            <GhostBtn label="Visa alla avgångar" onClick={onDismiss} />
-          </>
+          <GhostBtn label="Visa alla avgångar" onClick={onDismiss} />
         )}
+      </>
+    )
+  })()
+
+  return (
+    <div className="absolute inset-0 z-30 flex flex-col" aria-modal="true" role="dialog">
+      <button onClick={onDismiss} aria-label="Visa alla avgångar"
+        className="flex-1 bg-black/30 dark:bg-black/50 backdrop-blur-[2px]" />
+      <div className="bg-white dark:bg-neutral-950 rounded-t-[18px] border-t border-neutral-200 dark:border-neutral-800 px-5 pt-3"
+        style={{ animation: 'slide-up 260ms cubic-bezier(0.32,0.72,0,1)', paddingBottom: 'max(env(safe-area-inset-bottom),1.5rem)' }}>
+        <div className="w-9 h-1 bg-neutral-300 dark:bg-neutral-700 rounded-full mx-auto mb-5 opacity-60" />
+        {sheetContent}
       </div>
     </div>
   )
