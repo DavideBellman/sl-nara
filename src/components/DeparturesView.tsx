@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import type { Departure, TransportMode } from '../types'
+import type { Departure, TransportMode, TravelGroup } from '../types'
 import { getTransportColor } from '../lib/format'
 import { StarIcon, StarFilledIcon, MapPinIcon, RefreshIcon, WarningIcon, SearchIcon, XIcon } from './icons'
 import { DepartureDetail } from './DepartureDetail'
@@ -60,6 +60,8 @@ interface DeparturesViewProps {
   isOffline: boolean
   onRefresh: () => void
   onToggleFavorite: () => void
+  groups: TravelGroup[]
+  onSaveGroup: (name: string, query: string) => void
 }
 
 export function DeparturesView({
@@ -73,12 +75,15 @@ export function DeparturesView({
   isOffline,
   onRefresh,
   onToggleFavorite,
+  groups,
+  onSaveGroup,
 }: DeparturesViewProps) {
   const isDark = useDarkMode()
   const [selectedDeparture, setSelectedDeparture] = useState<Departure | null>(null)
   const [collapsed, setCollapsed] = useState<Set<TransportMode>>(new Set())
   const [filter, setFilter] = useState('')
   const [destinationModalSeen, setDestinationModalSeen] = useState(false)
+  const [saveSheetOpen, setSaveSheetOpen] = useState(false)
 
   useEffect(() => {
     setSelectedDeparture(null)
@@ -194,6 +199,36 @@ export function DeparturesView({
         )}
       </div>
 
+      {(groups.length > 0 || filterTrimmed) && (
+        <div className="flex gap-2 px-5 py-2.5 overflow-x-auto no-scrollbar border-b border-neutral-200 dark:border-neutral-800">
+          {groups.map(g => {
+            const active = g.query.toLowerCase() === filterTrimmed
+            return (
+              <button
+                key={g.id}
+                onClick={() => setFilter(active ? '' : g.query)}
+                className={[
+                  'shrink-0 h-7 px-3 rounded-full font-mono text-[11px] font-medium transition-colors',
+                  active
+                    ? 'bg-neutral-950 dark:bg-neutral-50 text-neutral-50 dark:text-neutral-950'
+                    : 'border border-neutral-200 dark:border-neutral-800 text-neutral-700 dark:text-neutral-300 active:bg-black/[0.04] dark:active:bg-white/[0.05]',
+                ].join(' ')}
+              >
+                {g.name}
+              </button>
+            )
+          })}
+          {filterTrimmed && !groups.some(g => g.query.toLowerCase() === filterTrimmed) && (
+            <button
+              onClick={() => setSaveSheetOpen(true)}
+              className="shrink-0 h-7 px-3 rounded-full border border-dashed border-neutral-300 dark:border-neutral-700 font-mono text-[11px] text-neutral-500 dark:text-neutral-400 active:opacity-60"
+            >
+              + Spara
+            </button>
+          )}
+        </div>
+      )}
+
       {error && !isOffline && (
         <div className="mx-4 mt-3 p-3 border border-red-200 dark:border-red-900 rounded text-red-600 dark:text-red-400 text-[12px] font-mono text-center">
           {error}
@@ -259,8 +294,17 @@ export function DeparturesView({
       {showDestinationModal && (
         <DestinationModal
           stopName={stop.name}
+          groups={groups}
           onFilter={q => { setFilter(q); setDestinationModalSeen(true) }}
           onDismiss={() => setDestinationModalSeen(true)}
+        />
+      )}
+
+      {saveSheetOpen && (
+        <SaveGroupSheet
+          query={filter.trim()}
+          onSave={(name) => { onSaveGroup(name, filter.trim()); setSaveSheetOpen(false) }}
+          onClose={() => setSaveSheetOpen(false)}
         />
       )}
     </div>
@@ -404,10 +448,12 @@ function EmptyState({ lastUpdated }: { lastUpdated: string | null }) {
 
 function DestinationModal({
   stopName,
+  groups,
   onFilter,
   onDismiss,
 }: {
   stopName: string
+  groups: TravelGroup[]
   onFilter: (query: string) => void
   onDismiss: () => void
 }) {
@@ -432,15 +478,29 @@ function DestinationModal({
         className="flex-1 bg-black/30 dark:bg-black/50 backdrop-blur-[2px]"
       />
       <div
-        className="bg-white dark:bg-neutral-950 rounded-t-[18px] border-t border-neutral-200 dark:border-neutral-800 px-5 pt-3 safe-bottom"
+        className="bg-white dark:bg-neutral-950 rounded-t-[18px] border-t border-neutral-200 dark:border-neutral-800 px-5 pt-3"
         style={{ animation: 'slide-up 260ms cubic-bezier(0.32, 0.72, 0, 1)', paddingBottom: 'max(env(safe-area-inset-bottom), 1.5rem)' }}
       >
         <div className="w-9 h-1 bg-neutral-300 dark:bg-neutral-700 rounded-full mx-auto mb-5 opacity-60" />
 
         <div className="text-label text-neutral-500 dark:text-neutral-400 mb-0.5">{stopName}</div>
-        <h2 className="text-[22px] font-semibold tracking-tight mb-5 text-neutral-950 dark:text-neutral-50">
+        <h2 className="text-[22px] font-semibold tracking-tight mb-4 text-neutral-950 dark:text-neutral-50">
           Vart ska du?
         </h2>
+
+        {groups.length > 0 && (
+          <div className="flex gap-2 overflow-x-auto no-scrollbar mb-4 -mx-5 px-5">
+            {groups.map(g => (
+              <button
+                key={g.id}
+                onClick={() => onFilter(g.query)}
+                className="shrink-0 h-8 px-3.5 rounded-full border border-neutral-200 dark:border-neutral-800 font-mono text-[11.5px] font-medium text-neutral-700 dark:text-neutral-300 active:bg-black/[0.04] dark:active:bg-white/[0.05] transition-colors"
+              >
+                {g.name}
+              </button>
+            ))}
+          </div>
+        )}
 
         <div className="flex items-center gap-2.5 px-3.5 h-[48px] border border-neutral-200 dark:border-neutral-800 rounded-lg focus-within:border-neutral-950 dark:focus-within:border-neutral-50 mb-3 transition-colors">
           <SearchIcon size={13} className="text-neutral-400 dark:text-neutral-600 shrink-0" />
@@ -473,6 +533,66 @@ function DestinationModal({
           className="w-full py-3.5 text-[13px] text-neutral-500 dark:text-neutral-400 active:opacity-50"
         >
           Visa alla avgångar
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ── Save group sheet ──────────────────────────────────────────────────────────
+
+function SaveGroupSheet({
+  query,
+  onSave,
+  onClose,
+}: {
+  query: string
+  onSave: (name: string) => void
+  onClose: () => void
+}) {
+  const [name, setName] = useState('')
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    const t = setTimeout(() => inputRef.current?.focus(), 100)
+    return () => clearTimeout(t)
+  }, [])
+
+  return (
+    <div className="absolute inset-0 z-40 flex flex-col" aria-modal="true" role="dialog">
+      <button onClick={onClose} aria-label="Avbryt" className="flex-1 bg-black/30 dark:bg-black/50 backdrop-blur-[2px]" />
+      <div
+        className="bg-white dark:bg-neutral-950 rounded-t-[18px] border-t border-neutral-200 dark:border-neutral-800 px-5 pt-3"
+        style={{ animation: 'slide-up 220ms cubic-bezier(0.32, 0.72, 0, 1)', paddingBottom: 'max(env(safe-area-inset-bottom), 1.5rem)' }}
+      >
+        <div className="w-9 h-1 bg-neutral-300 dark:bg-neutral-700 rounded-full mx-auto mb-5 opacity-60" />
+
+        <div className="text-label text-neutral-500 dark:text-neutral-400 mb-0.5">Spara som grupp</div>
+        <div className="text-[13px] font-mono text-neutral-500 dark:text-neutral-400 mb-4">
+          Filter: <span className="text-neutral-950 dark:text-neutral-50 font-semibold">"{query}"</span>
+        </div>
+
+        <div className="flex items-center gap-2.5 px-3.5 h-[48px] border border-neutral-200 dark:border-neutral-800 rounded-lg focus-within:border-neutral-950 dark:focus-within:border-neutral-50 mb-3 transition-colors">
+          <input
+            ref={inputRef}
+            type="text"
+            value={name}
+            onChange={e => setName(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && name.trim() && onSave(name.trim())}
+            placeholder="Till jobbet, Hem, Mamma…"
+            className="flex-1 bg-transparent font-mono text-[13px] outline-none placeholder:text-neutral-400 dark:placeholder:text-neutral-600 text-neutral-950 dark:text-neutral-50"
+          />
+        </div>
+
+        <button
+          onClick={() => name.trim() && onSave(name.trim())}
+          disabled={!name.trim()}
+          className="w-full h-[46px] bg-neutral-950 dark:bg-neutral-50 text-neutral-50 dark:text-neutral-950 rounded-lg font-mono text-[13px] font-medium disabled:opacity-25 active:opacity-75 transition-opacity mb-1"
+        >
+          Spara grupp
+        </button>
+        <button onClick={onClose} className="w-full py-3.5 text-[13px] text-neutral-500 dark:text-neutral-400 active:opacity-50">
+          Avbryt
         </button>
       </div>
     </div>

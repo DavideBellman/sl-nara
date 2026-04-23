@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import type { Site, FavoriteSite } from './types'
+import type { Site, FavoriteSite, TravelGroup } from './types'
 import { fetchSites, fetchDepartures } from './lib/api'
 import { isTooFarFromStockholm, haversineKm } from './lib/geo'
 import { getItem, setItem } from './lib/storage'
@@ -14,6 +14,7 @@ import { PermissionGate } from './components/PermissionGate'
 import { TabBar, type Tab } from './components/TabBar'
 
 const FAVORITES_KEY = 'sl_favorites_v1'
+const GROUPS_KEY = 'sl_groups_v1'
 const MAX_FAVORITES = 5
 const MAX_GPS_ATTEMPTS = 5
 
@@ -30,6 +31,7 @@ export default function App() {
   const [selectedStop, setSelectedStop] = useState<SelectedStop | null>(null)
   const [isSearchOpen, setIsSearchOpen] = useState(false)
   const [favorites, setFavorites] = useState<FavoriteSite[]>(() => getItem<FavoriteSite[]>(FAVORITES_KEY) ?? [])
+  const [groups, setGroups] = useState<TravelGroup[]>(() => getItem<TravelGroup[]>(GROUPS_KEY) ?? [])
   const [activeTab, setActiveTab] = useState<Tab>('departures')
   const [tabKey, setTabKey] = useState(0)
 
@@ -142,6 +144,22 @@ export default function App() {
     switchTab('departures')
   }, [switchTab])
 
+  const saveGroup = useCallback((name: string, query: string) => {
+    setGroups(prev => {
+      const next = [...prev, { id: crypto.randomUUID(), name, query }]
+      setItem(GROUPS_KEY, next)
+      return next
+    })
+  }, [])
+
+  const deleteGroup = useCallback((id: string) => {
+    setGroups(prev => {
+      const next = prev.filter(g => g.id !== id)
+      setItem(GROUPS_KEY, next)
+      return next
+    })
+  }, [])
+
   const toggleFavorite = useCallback(() => {
     if (!selectedStop) return
     setFavorites(prev => {
@@ -232,6 +250,8 @@ export default function App() {
                   isOffline={isOffline}
                   onRefresh={refresh}
                   onToggleFavorite={toggleFavorite}
+                  groups={groups}
+                  onSaveGroup={saveGroup}
                 />
               )}
 
@@ -250,6 +270,8 @@ export default function App() {
               sites={sites}
               userCoords={geo.coords}
               onSelect={handleStopSelect}
+              groups={groups}
+              onDeleteGroup={deleteGroup}
             />
           )}
 

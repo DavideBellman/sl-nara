@@ -67,3 +67,9 @@ export interface FavoriteSite {
   id: number
   name: string
 }
+
+export interface TravelGroup {
+  id: string
+  name: string
+  query: string
+}
