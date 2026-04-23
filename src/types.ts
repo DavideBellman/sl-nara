@@ -7,7 +7,7 @@ export interface Site {
   valid?: boolean
 }
 
-export type TransportMode = 'BUS' | 'METRO' | 'TRAIN' | 'TRAM' | 'SHIP'
+export type TransportMode = 'BUS' | 'METRO' | 'TRAIN' | 'TRAM' | 'SHIP' | 'FERRY' | 'TAXI'
 
 export type DepartureState =
   | 'EXPECTED'
@@ -16,21 +16,25 @@ export type DepartureState =
   | 'NOTCALLED'
   | 'NOTEXPECTED'
 
-export type PassengerLevel =
-  | 'EMPTY'
-  | 'SEATS_AVAILABLE'
-  | 'STANDING_PASSENGERS'
-  | 'FULL'
-  | 'UNKNOWN'
-
 export interface Line {
+  id?: number
   designation: string
   transport_mode: TransportMode
   group_of_lines?: string | null
+  transport_authority_id?: number
 }
 
 export interface StopPoint {
+  id?: number
+  name?: string
   designation?: string | null
+}
+
+export interface StopArea {
+  id: number
+  name: string
+  /** BUSTERM | METROSTN | RAILWSTN | TRAMSTN | SHIPBER | FERRYBER */
+  type: string
 }
 
 export interface Deviation {
@@ -45,44 +49,21 @@ export interface Departure {
   expected: string | null
   state: DepartureState
   destination: string
+  via?: string
   direction: string
+  direction_code?: number
   line: Line
   stop_point: StopPoint
+  stop_area?: StopArea
   deviations: Deviation[]
   journey?: {
-    id?: string
-    passenger_level?: PassengerLevel
+    id?: number
     state?: string
+    prediction_state?: string
   }
-}
-
-export interface JourneyCall {
-  stop_point?: {
-    stop_area?: { name?: string }
-    designation?: string
-  }
-  stop_area?: { name?: string }
-  expected_departure?: string | null
-  expected_arrival?: string | null
-  state?: string
 }
 
 export interface FavoriteSite {
   id: number
   name: string
-}
-
-export interface DepartureGroup {
-  key: string
-  lineDesignation: string
-  transportMode: TransportMode
-  groupOfLines: string | null
-  direction: string
-  destination: string
-  stopDesignation: string | null
-  departures: {
-    display: string
-    state: DepartureState
-    deviations: Deviation[]
-  }[]
 }

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { Departure, PassengerLevel } from '../types'
+import type { Departure } from '../types'
 import { getTransportColor } from '../lib/format'
 import { ArrowLeftIcon } from './icons'
 
@@ -19,28 +19,15 @@ function formatTime(iso: string | null | undefined): string | null {
   return d.toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit' })
 }
 
-function crowdingInfo(level: PassengerLevel): { bars: number; color: string; label: string } | null {
-  switch (level) {
-    case 'EMPTY':               return { bars: 1, color: '#16a34a', label: 'Tomt' }
-    case 'SEATS_AVAILABLE':     return { bars: 2, color: '#16a34a', label: 'Sittplatser finns' }
-    case 'STANDING_PASSENGERS': return { bars: 3, color: '#b45309', label: 'Stående passagerare' }
-    case 'FULL':                return { bars: 4, color: '#dc2626', label: 'Fullt' }
-    default:                    return null
-  }
-}
-
-// Tick every 10 s so the display stays live while open
+// Keeps the big countdown live while the detail is open
 function useLiveDisplay(departure: Departure) {
   const [display, setDisplay] = useState(departure.display)
   useEffect(() => {
+    const target = departure.expected ?? departure.scheduled
+    if (!target) return
     const update = () => {
-      if (!departure.expected && !departure.scheduled) return
-      const targetMs = departure.expected
-        ? new Date(departure.expected).getTime()
-        : new Date(departure.scheduled).getTime()
-      const diffMin = Math.round((targetMs - Date.now()) / 60000)
-      if (diffMin <= 0) setDisplay('Nu')
-      else setDisplay(`${diffMin} min`)
+      const diffMin = Math.round((new Date(target).getTime() - Date.now()) / 60000)
+      setDisplay(diffMin <= 0 ? 'Nu' : `${diffMin} min`)
     }
     update()
     const id = setInterval(update, 10_000)
@@ -63,21 +50,19 @@ export function DepartureDetail({ departure, isDark, onBack }: Props) {
   const isCancelled = departure.state === 'CANCELLED'
 
   const scheduledTime = formatTime(departure.scheduled)
+  const expectedTime = formatTime(departure.expected)
   const expectedMs = departure.expected ? new Date(departure.expected).getTime() : null
   const scheduledMs = new Date(departure.scheduled).getTime()
   const delayMin = expectedMs ? Math.round((expectedMs - scheduledMs) / 60000) : 0
   const delayStr = delayMin > 1 ? `${delayMin} min sen` : delayMin < -1 ? `${Math.abs(delayMin)} min tidig` : null
 
-  const crowding = departure.journey?.passenger_level
-    ? crowdingInfo(departure.journey.passenger_level)
-    : null
-
   const platform = departure.stop_point.designation
+  const stopAreaName = departure.stop_area?.name
+  const hasExpectedDiff = departure.expected && departure.expected !== departure.scheduled
 
   return (
     <div className="h-full flex flex-col bg-white dark:bg-neutral-950 text-neutral-950 dark:text-neutral-50 overflow-y-auto animate-detail-in">
 
-      {/* Back */}
       <header
         className="flex items-center gap-2 px-5 pb-2"
         style={{ paddingTop: 'max(env(safe-area-inset-top), 1.25rem)' }}
@@ -111,70 +96,65 @@ export function DepartureDetail({ departure, isDark, onBack }: Props) {
         )}
       </div>
 
-      {/* Line */}
-      <div className="flex items-center gap-2 px-5 pb-5">
-        <span className="w-0.5 h-4 rounded-[1px] shrink-0" style={{ background: barColor }} />
-        <span className="font-mono text-[13px] font-bold">{departure.line.designation}</span>
-        <span className="text-[12px] text-neutral-400 dark:text-neutral-600" aria-hidden>→</span>
-        <span className="text-[14px] font-medium">{departure.destination}</span>
+      {/* Line + via */}
+      <div className="px-5 pb-5 space-y-1">
+        <div className="flex items-center gap-2">
+          <span className="w-0.5 h-4 rounded-[1px] shrink-0" style={{ background: barColor }} />
+          <span className="font-mono text-[13px] font-bold">{departure.line.designation}</span>
+          <span className="text-[12px] text-neutral-400 dark:text-neutral-600" aria-hidden>→</span>
+          <span className="text-[14px] font-medium">{departure.destination}</span>
+        </div>
+        {departure.via && (
+          <div className="font-mono text-[11px] text-neutral-500 dark:text-neutral-400 ml-2.5">
+            via {departure.via}
+          </div>
+        )}
       </div>
 
       <div className="border-t border-neutral-200 dark:border-neutral-800" />
 
       <div className="flex-1 px-5">
 
-        {/* TRÄNGSEL */}
-        {crowding && (
-          <section className="py-4 border-b border-neutral-200 dark:border-neutral-800">
-            <div className="text-label text-neutral-500 dark:text-neutral-400 mb-3">Trängsel</div>
-            <div className="flex items-center gap-3">
-              <div className="flex items-end gap-[3px]">
-                {[1, 2, 3, 4].map(i => (
-                  <div
-                    key={i}
-                    style={{
-                      width: 3,
-                      height: 5 + i * 3,
-                      background: i <= crowding.bars ? crowding.color : isDark ? '#404040' : '#e5e7eb',
-                      borderRadius: 1.5,
-                    }}
-                  />
-                ))}
-              </div>
-              <span className="text-[13px]">{crowding.label}</span>
-            </div>
-          </section>
-        )}
-
-        {/* AVGÅNGSTID */}
-        <section className="py-4 border-b border-neutral-200 dark:border-neutral-800">
+        {/* Tidtabell */}
+        <section className={['py-4', departure.deviations.length > 0 ? 'border-b border-neutral-200 dark:border-neutral-800' : ''].join(' ')}>
           <div className="text-label text-neutral-500 dark:text-neutral-400 mb-3">Tidtabell</div>
-          <div className="space-y-2">
+          <div className="space-y-2.5">
+
             <div className="flex justify-between items-center">
               <span className="text-[13px] text-neutral-600 dark:text-neutral-400">Planerad avgång</span>
               <span className="font-mono text-[13px]">{scheduledTime ?? '—'}</span>
             </div>
-            {departure.expected && departure.expected !== departure.scheduled && (
+
+            {hasExpectedDiff && (
               <div className="flex justify-between items-center">
                 <span className="text-[13px] text-neutral-600 dark:text-neutral-400">Förväntad avgång</span>
                 <span className={[
                   'font-mono text-[13px]',
                   delayMin > 0 ? 'text-amber-600 dark:text-amber-500' : 'text-green-600 dark:text-green-500',
                 ].join(' ')}>
-                  {formatTime(departure.expected) ?? '—'}
+                  {expectedTime ?? '—'}
                 </span>
               </div>
             )}
+
+            {stopAreaName && (
+              <div className="flex justify-between items-center">
+                <span className="text-[13px] text-neutral-600 dark:text-neutral-400">Hållplats</span>
+                <span className="font-mono text-[13px]">{stopAreaName}</span>
+              </div>
+            )}
+
             {platform && (
               <div className="flex justify-between items-center">
-                <span className="text-[13px] text-neutral-600 dark:text-neutral-400">Perron / läge</span>
+                <span className="text-[13px] text-neutral-600 dark:text-neutral-400">Läge / perron</span>
                 <span className="font-mono text-[13px]">{platform}</span>
               </div>
             )}
+
           </div>
         </section>
 
-        {/* AVVIKELSE */}
+        {/* Avvikelse */}
         {departure.deviations.length > 0 && (
           <section className="py-4">
             <div className="text-label text-neutral-500 dark:text-neutral-400 mb-3">Avvikelse</div>
