@@ -76,8 +76,20 @@ export function DeparturesView({
 }: DeparturesViewProps) {
   const isDark = useDarkMode()
   const [selectedDeparture, setSelectedDeparture] = useState<Departure | null>(null)
+  const [collapsed, setCollapsed] = useState<Set<TransportMode>>(new Set())
 
-  useEffect(() => { setSelectedDeparture(null) }, [stop.id])
+  useEffect(() => {
+    setSelectedDeparture(null)
+    setCollapsed(new Set())
+  }, [stop.id])
+
+  function toggleMode(mode: TransportMode) {
+    setCollapsed(prev => {
+      const next = new Set(prev)
+      next.has(mode) ? next.delete(mode) : next.add(mode)
+      return next
+    })
+  }
 
   const lastUpdatedStr = lastUpdated
     ? lastUpdated.toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
@@ -155,26 +167,32 @@ export function DeparturesView({
           </div>
         ) : (
           <>
-            {modeGroups.map(({ mode, deps }, groupIdx) => (
-              <div key={mode}>
-                {multiMode && (
-                  <ModeHeader
-                    label={MODE_LABEL[mode] ?? mode}
-                    color={MODE_COLOR[mode] ?? '#9ca3af'}
-                    first={groupIdx === 0}
-                  />
-                )}
-                {deps.map((dep, idx) => (
-                  <DepartureRow
-                    key={`${dep.line.designation}-${dep.destination}-${dep.scheduled}-${idx}`}
-                    departure={dep}
-                    emphasized={!multiMode && idx === 0 && dep.state !== 'CANCELLED'}
-                    isDark={isDark}
-                    onClick={() => setSelectedDeparture(dep)}
-                  />
-                ))}
-              </div>
-            ))}
+            {modeGroups.map(({ mode, deps }, groupIdx) => {
+              const isCollapsed = collapsed.has(mode)
+              return (
+                <div key={mode}>
+                  {multiMode && (
+                    <ModeHeader
+                      label={MODE_LABEL[mode] ?? mode}
+                      color={MODE_COLOR[mode] ?? '#9ca3af'}
+                      first={groupIdx === 0}
+                      collapsed={isCollapsed}
+                      count={deps.length}
+                      onToggle={() => toggleMode(mode)}
+                    />
+                  )}
+                  {!isCollapsed && deps.map((dep, idx) => (
+                    <DepartureRow
+                      key={`${dep.line.designation}-${dep.destination}-${dep.scheduled}-${idx}`}
+                      departure={dep}
+                      emphasized={!multiMode && idx === 0 && dep.state !== 'CANCELLED'}
+                      isDark={isDark}
+                      onClick={() => setSelectedDeparture(dep)}
+                    />
+                  ))}
+                </div>
+              )
+            })}
             {departures.length === 0 && !loading && (
               <EmptyState lastUpdated={lastUpdatedStr} />
             )}
@@ -200,13 +218,30 @@ export function DeparturesView({
 
 // ── Mode section header ───────────────────────────────────────────────────────
 
-function ModeHeader({ label, color, first }: { label: string; color: string; first: boolean }) {
+function ModeHeader({
+  label, color, first, collapsed, count, onToggle,
+}: {
+  label: string; color: string; first: boolean
+  collapsed: boolean; count: number; onToggle: () => void
+}) {
   return (
-    <div className={['flex items-center gap-2.5 px-5 pb-2.5', first ? 'pt-4' : 'pt-5'].join(' ')}>
+    <button
+      onClick={onToggle}
+      className={['w-full flex items-center gap-2.5 px-5 pb-2.5 active:opacity-60 transition-opacity', first ? 'pt-4' : 'pt-5'].join(' ')}
+    >
       <div className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: color }} />
       <span className="text-label text-neutral-500 dark:text-neutral-400 shrink-0">{label}</span>
       <div className="flex-1 h-px bg-neutral-200 dark:bg-neutral-800" />
-    </div>
+      {collapsed && (
+        <span className="font-mono text-[10px] text-neutral-400 dark:text-neutral-600 shrink-0">{count}</span>
+      )}
+      <svg
+        width="10" height="10" viewBox="0 0 10 10" fill="none"
+        className={['text-neutral-400 dark:text-neutral-600 shrink-0 transition-transform duration-200', collapsed ? '-rotate-90' : ''].join(' ')}
+      >
+        <path d="M2 4l3 3 3-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    </button>
   )
 }
 
