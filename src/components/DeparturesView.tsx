@@ -219,11 +219,19 @@ interface DepartureRowProps {
   onClick: () => void
 }
 
+function formatDesignation(d: string | null | undefined, areaType?: string): string | null {
+  if (!d) return null
+  if (areaType === 'BUSTERM') return `Läge ${d}`
+  if (areaType === 'RAILWSTN') return `Spår ${d}`
+  return d
+}
+
 function DepartureRow({ departure, emphasized, isDark, onClick }: DepartureRowProps) {
   const isCancelled = departure.state === 'CANCELLED'
   const lightColor = getTransportColor(departure.line.transport_mode, departure.line.group_of_lines)
   const barColor = isDark ? (DARK_COLORS[lightColor] ?? lightColor) : lightColor
   const hasDeviation = departure.deviations.length > 0
+  const designation = formatDesignation(departure.stop_point.designation, departure.stop_area?.type)
 
   return (
     <button
@@ -253,9 +261,14 @@ function DepartureRow({ departure, emphasized, isDark, onClick }: DepartureRowPr
         <span className="w-0.5 h-3.5 rounded-[1px] shrink-0" style={{ background: barColor }} aria-hidden />
         <span className="font-mono text-[12.5px] font-bold">{departure.line.designation}</span>
         <span className="text-[12px] text-neutral-400 dark:text-neutral-600" aria-hidden>→</span>
-        <span className="text-[13.5px] font-medium">{departure.destination}</span>
+        <span className="text-[13.5px] font-medium flex-1 min-w-0 truncate">{departure.destination}</span>
         {hasDeviation && (
-          <WarningIcon className="ml-0.5 shrink-0 text-amber-600 dark:text-amber-500" aria-label="Avvikelse" />
+          <WarningIcon className="shrink-0 text-amber-600 dark:text-amber-500" aria-label="Avvikelse" />
+        )}
+        {designation && (
+          <span className="font-mono text-[10px] text-neutral-500 dark:text-neutral-400 shrink-0 tabular">
+            {designation}
+          </span>
         )}
       </div>
 
