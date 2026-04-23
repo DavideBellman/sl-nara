@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import type { Departure, TransportMode } from '../types'
 import { getTransportColor } from '../lib/format'
-import { StarIcon, StarFilledIcon, MapPinIcon, RefreshIcon, WarningIcon } from './icons'
+import { StarIcon, StarFilledIcon, MapPinIcon, RefreshIcon, WarningIcon, SearchIcon, XIcon } from './icons'
 import { DepartureDetail } from './DepartureDetail'
 
 const DARK_COLORS: Record<string, string> = {
@@ -77,10 +77,12 @@ export function DeparturesView({
   const isDark = useDarkMode()
   const [selectedDeparture, setSelectedDeparture] = useState<Departure | null>(null)
   const [collapsed, setCollapsed] = useState<Set<TransportMode>>(new Set())
+  const [filter, setFilter] = useState('')
 
   useEffect(() => {
     setSelectedDeparture(null)
     setCollapsed(new Set())
+    setFilter('')
   }, [stop.id])
 
   function toggleMode(mode: TransportMode) {
@@ -95,9 +97,18 @@ export function DeparturesView({
     ? lastUpdated.toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
     : null
 
+  const filterTrimmed = filter.trim().toLowerCase()
+  const visibleDepartures = filterTrimmed
+    ? departures.filter(dep =>
+        dep.destination.toLowerCase().includes(filterTrimmed) ||
+        dep.line.designation.toLowerCase().includes(filterTrimmed) ||
+        (dep.via?.toLowerCase().includes(filterTrimmed) ?? false)
+      )
+    : departures
+
   const modeGroups = (() => {
     const map = new Map<TransportMode, Departure[]>()
-    for (const dep of departures) {
+    for (const dep of visibleDepartures) {
       const mode = dep.line.transport_mode
       if (!map.has(mode)) map.set(mode, [])
       map.get(mode)!.push(dep)
@@ -153,6 +164,26 @@ export function DeparturesView({
         </div>
       </header>
 
+      <div className="flex items-center gap-2.5 px-5 py-2 border-b border-neutral-200 dark:border-neutral-800">
+        <SearchIcon size={12} className="text-neutral-400 dark:text-neutral-600 shrink-0" />
+        <input
+          type="text"
+          value={filter}
+          onChange={e => setFilter(e.target.value)}
+          placeholder="Filtrera destination eller linje…"
+          className="flex-1 bg-transparent font-mono text-[12.5px] outline-none placeholder:text-neutral-400 dark:placeholder:text-neutral-600 text-neutral-950 dark:text-neutral-50"
+        />
+        {filter && (
+          <button
+            onClick={() => setFilter('')}
+            aria-label="Rensa filter"
+            className="p-1 -m-1 text-neutral-400 dark:text-neutral-600 active:opacity-50"
+          >
+            <XIcon size={11} />
+          </button>
+        )}
+      </div>
+
       {error && !isOffline && (
         <div className="mx-4 mt-3 p-3 border border-red-200 dark:border-red-900 rounded text-red-600 dark:text-red-400 text-[12px] font-mono text-center">
           {error}
@@ -193,8 +224,10 @@ export function DeparturesView({
                 </div>
               )
             })}
-            {departures.length === 0 && !loading && (
-              <EmptyState lastUpdated={lastUpdatedStr} />
+            {visibleDepartures.length === 0 && !loading && (
+              filterTrimmed
+                ? <FilterEmptyState query={filter.trim()} onClear={() => setFilter('')} />
+                : <EmptyState lastUpdated={lastUpdatedStr} />
             )}
           </>
         )}
@@ -313,6 +346,19 @@ function DepartureRow({ departure, emphasized, isDark, onClick }: DepartureRowPr
         </div>
       )}
     </button>
+  )
+}
+
+function FilterEmptyState({ query, onClear }: { query: string; onClear: () => void }) {
+  return (
+    <div className="flex flex-col items-center justify-center py-16 text-center px-8">
+      <div className="text-[14px] text-neutral-500 dark:text-neutral-400 mb-1">
+        Inga avgångar mot <span className="font-semibold text-neutral-950 dark:text-neutral-50">"{query}"</span>
+      </div>
+      <button onClick={onClear} className="mt-3 font-mono text-[11px] text-neutral-400 dark:text-neutral-600 underline underline-offset-2">
+        Rensa filter
+      </button>
+    </div>
   )
 }
 
