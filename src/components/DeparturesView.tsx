@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import type { Departure, TransportMode, Favorite } from '../types'
+import type { Departure, TransportMode, Favorite, Site } from '../types'
 import { getTransportColor } from '../lib/format'
 import { StarIcon, StarFilledIcon, MapPinIcon, RefreshIcon, WarningIcon, SearchIcon, XIcon } from './icons'
 import { DepartureDetail } from './DepartureDetail'
@@ -36,6 +36,7 @@ interface DeparturesViewProps {
   lastUpdated: Date | null
   isOffline: boolean
   onRefresh: () => void
+  sites: Site[]
   // Unified favorites
   favorites: Favorite[]
   onAddStopFavorite: (filter?: string) => void
@@ -49,7 +50,7 @@ interface DeparturesViewProps {
 export function DeparturesView({
   stop, distanceLabel, isFavorite, departures, loading, error,
   lastUpdated, isOffline, onRefresh,
-  favorites, onAddStopFavorite, onRemoveStopFavorite, onAddDestination,
+  sites, favorites, onAddStopFavorite, onRemoveStopFavorite, onAddDestination,
   filter, onFilterChange,
 }: DeparturesViewProps) {
   const isDark = useDarkMode()
@@ -271,7 +272,7 @@ export function DeparturesView({
       {showDestinationModal && (
         <DestinationModal
           stopName={stop.name}
-          departures={departures}
+          sites={sites}
           destinations={destinations}
           onFilter={q => { onFilterChange(q); setDestinationModalSeen(true) }}
           onDismiss={() => setDestinationModalSeen(true)}
@@ -513,9 +514,9 @@ function SaveStopSheet({ stopName, filter, onSave, onClose }: {
 
 // ── Destination modal (complex stop auto-popup) ───────────────────────────────
 
-function DestinationModal({ stopName, departures, destinations, onFilter, onDismiss }: {
+function DestinationModal({ stopName, sites, destinations, onFilter, onDismiss }: {
   stopName: string
-  departures: Departure[]
+  sites: Site[]
   destinations: (Favorite & { filter: string })[]
   onFilter: (query: string) => void
   onDismiss: () => void
@@ -526,9 +527,8 @@ function DestinationModal({ stopName, departures, destinations, onFilter, onDism
 
   const trimmed = value.trim().toLowerCase()
 
-  const allDestinations = [...new Set(departures.map(d => d.destination))].sort()
   const suggestions = trimmed
-    ? allDestinations.filter(d => d.toLowerCase().includes(trimmed))
+    ? sites.filter(s => s.name.toLowerCase().includes(trimmed)).slice(0, 12).map(s => s.name)
     : []
 
   return (

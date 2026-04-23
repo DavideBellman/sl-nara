@@ -295,6 +295,7 @@ export default function App() {
                   lastUpdated={lastUpdated}
                   isOffline={isOffline}
                   onRefresh={refresh}
+                  sites={sites}
                   onAddStopFavorite={(filter) => addStopFavorite(selectedStop.id, selectedStop.name, filter)}
                   onRemoveStopFavorite={() => removeStopFavorites(selectedStop.id)}
                   favorites={favorites}
